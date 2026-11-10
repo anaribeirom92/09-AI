@@ -25,7 +25,7 @@ export default async function ConfirmAuthPage({
         {validToken && validType ? (
           <>
             <p className="muted">Clique no botão abaixo para validar o link e continuar para a configuração da sua senha.</p>
-            <form className="login-form" action="/auth/confirm" method="post">
+            <form className="login-form" action="/auth/confirm/submit" method="post">
               <input type="hidden" name="token_hash" value={params.token_hash} />
               <input type="hidden" name="type" value={params.type} />
               <input type="hidden" name="next" value={params.next === "/dashboard" ? "/dashboard" : "/reset-password"} />
