@@ -19,7 +19,7 @@ export function LoginForm({ error, message }: { error?: string; message?: string
     if (!email.trim()) { setFeedback("Digite seu e-mail para receber o link de recuperação."); return; }
     setBusy(true); const supabase = createClient();
     const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-      redirectTo: window.location.origin + "/auth/callback?next=/login",
+      redirectTo: window.location.origin + "/auth/callback?next=/reset-password",
     });
     setBusy(false);
     setFeedback(error ? "Não foi possível enviar o link agora." : "Se o e-mail estiver cadastrado, você receberá um link de recuperação.");
