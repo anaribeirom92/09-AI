@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { LoginForm } from "./login-form";
 export default async function LoginPage({ searchParams }: { searchParams: Promise<{ error?: string; message?: string }> }) {
   const supabase = await createClient();
-  const { data: { claims } } = await supabase.auth.getClaims();
+  const { data: claims } = await supabase.auth.getClaims();
   if (claims?.sub) redirect("/dashboard");
   const params = await searchParams;
   return <main className="login-shell">
