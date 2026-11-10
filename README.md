@@ -30,5 +30,13 @@ npm install
 npm run dev
 ```
 
+## Executor de agentes
+O worker da Responses API aceita chamadas de funções em uma lista fechada de ferramentas internas. Nesta etapa, o conjunto operacional inclui:
+- Consulta, criação e atualização de tarefas.
+- Consulta, criação e atualização de projetos.
+- Consulta, criação e atualização de entregáveis.
+
+As ferramentas de escrita passam por validação de permissões no servidor e por uma função PostgreSQL transacional com registro de auditoria. Não há ferramentas para exclusão, comunicação externa, publicação, gastos, alteração de preços, contratos, contratação, pesquisa web, notificações, agendamento ou delegação entre agentes. Agentes em rascunho não podem executar chamadas.
+
 ## Governança
 Agentes iniciam em rascunho. Publicações, despesas, alterações de preço, contratos, mudanças de mídia paga e ações irreversíveis exigem autorização explícita da direção. Toda autorização deve ser validada no backend e registrada em auditoria.
