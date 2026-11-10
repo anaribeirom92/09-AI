@@ -2,7 +2,8 @@ import { createClient } from "@/lib/supabase/server";
 export const ORGANIZATION_ID = "b980beb2-ded8-46aa-beb4-ebde0bfb79c2";
 export async function getAgencyContext() {
   const supabase = await createClient();
-  const { data: claims, error } = await supabase.auth.getClaims();
+  const { data: authClaims, error } = await supabase.auth.getClaims();
+  const claims = authClaims?.claims;
   if (error || !claims?.sub) return { supabase, userId: null, membership: null, organization: null };
   const userId = String(claims.sub);
   const { data: membership } = await supabase.from("organization_members")
