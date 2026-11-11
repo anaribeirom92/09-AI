@@ -12,10 +12,12 @@ type ProcessResult = { stdout: string; stderr: string };
 function parseArgs(args: string[]): Options {
   const values = new Map<string, string>();
   const flags = new Set(["analyze-only", "transcribe"]);
+  const valueOptions = new Set(["input", "output", "aspect", "height", "silence-noise", "silence-duration", "report", "plan", "whisper-model", "whisper-bin", "language"]);
   for (let i = 0; i < args.length; i++) {
     const key = args[i];
     if (key.startsWith("--")) {
       const name = key.slice(2);
+      if (!flags.has(name) && !valueOptions.has(name)) throw new Error("Opção desconhecida: " + key);
       if (flags.has(name)) { values.set(name, "true"); continue; }
       const value = args[i + 1];
       if (!value || value.startsWith("--")) throw new Error("Informe um valor para " + key);
@@ -32,10 +34,12 @@ function parseArgs(args: string[]): Options {
   const aspect = (values.get("aspect") ?? "9:16") as Aspect;
   const height = Number(values.get("height") ?? "1080") as Options["height"];
   const silenceDuration = Number(values.get("silence-duration") ?? "0.45");
+  const silenceNoise = values.get("silence-noise") ?? "-35dB";
+  if (!/^-?\\d+(?:\\.\\d+)?dB$/i.test(silenceNoise) || Number.parseFloat(silenceNoise) > 0 || Number.parseFloat(silenceNoise) < -100) throw new Error("Limite de silêncio inválido; use um valor entre -100dB e 0dB.");
   if (!["9:16", "16:9", "1:1"].includes(aspect)) throw new Error("Proporção inválida.");
   if (![720, 1080, 1440, 2160].includes(height)) throw new Error("Resolução inválida.");
   if (!Number.isFinite(silenceDuration) || silenceDuration < 0.1 || silenceDuration > 10) throw new Error("Duração mínima de silêncio deve estar entre 0.1 e 10 segundos.");
-  return { input: resolve(input), output: output ? resolve(output) : undefined, aspect, height, analyzeOnly, transcribe, whisperBin: values.get("whisper-bin") ?? "whisper-cli", whisperModel: whisperModel ? resolve(whisperModel) : undefined, language: values.get("language") ?? "pt", silenceNoise: values.get("silence-noise") ?? "-35dB", silenceDuration, report: values.get("report") ? resolve(values.get("report")!) : undefined, plan: values.get("plan") ? resolve(values.get("plan")!) : undefined };
+  return { input: resolve(input), output: output ? resolve(output) : undefined, aspect, height, analyzeOnly, transcribe, whisperBin: values.get("whisper-bin") ?? "whisper-cli", whisperModel: whisperModel ? resolve(whisperModel) : undefined, language: values.get("language") ?? "pt", silenceNoise, silenceDuration, report: values.get("report") ? resolve(values.get("report")!) : undefined, plan: values.get("plan") ? resolve(values.get("plan")!) : undefined };
 }
 function run(command: string, args: string[]): Promise<ProcessResult> {
   return new Promise((resolvePromise, reject) => {
@@ -80,6 +84,8 @@ async function main() {
   if (options.plan && !options.analyzeOnly) throw new Error("A geração de plano exige --analyze-only.");
   if (options.plan && options.input === options.plan) throw new Error("O plano não pode sobrescrever o vídeo original.");
   if (options.plan && options.report && options.plan === options.report) throw new Error("Relatório e plano precisam de caminhos diferentes.");
+  if (options.output && (options.output === options.report || options.output === options.plan)) throw new Error("Vídeo de saída, relatório e plano precisam de caminhos diferentes.");
+  if (options.transcribe && (options.output === options.report || options.output === options.plan)) throw new Error("O SRT de saída precisa ter caminho exclusivo.");
   const probeResult = await run("ffprobe", ["-v", "error", "-show_format", "-show_streams", "-of", "json", options.input]);
   const probe = JSON.parse(probeResult.stdout) as { format?: { duration?: string; format_name?: string }; streams?: Array<{ codec_type?: string; width?: number; height?: number; codec_name?: string; sample_rate?: string; channels?: number; side_data_list?: Array<{ rotation?: number }> }> };
   const analysis = await analyze(options, probe);
