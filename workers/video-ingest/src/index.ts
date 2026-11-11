@@ -35,7 +35,7 @@ function parseArgs(args: string[]): Options {
   const height = Number(values.get("height") ?? "1080") as Options["height"];
   const silenceDuration = Number(values.get("silence-duration") ?? "0.45");
   const silenceNoise = values.get("silence-noise") ?? "-35dB";
-  if (!/^-?\\d+(?:\\.\\d+)?dB$/i.test(silenceNoise) || Number.parseFloat(silenceNoise) > 0 || Number.parseFloat(silenceNoise) < -100) throw new Error("Limite de silêncio inválido; use um valor entre -100dB e 0dB.");
+  if (!/^-?\d+(?:\.\d+)?dB$/i.test(silenceNoise) || Number.parseFloat(silenceNoise) > 0 || Number.parseFloat(silenceNoise) < -100) throw new Error("Limite de silêncio inválido; use um valor entre -100dB e 0dB.");
   if (!["9:16", "16:9", "1:1"].includes(aspect)) throw new Error("Proporção inválida.");
   if (![720, 1080, 1440, 2160].includes(height)) throw new Error("Resolução inválida.");
   if (!Number.isFinite(silenceDuration) || silenceDuration < 0.1 || silenceDuration > 10) throw new Error("Duração mínima de silêncio deve estar entre 0.1 e 10 segundos.");
