@@ -105,7 +105,7 @@ async function main() {
     let audioNormalized = false;
     if (audio) {
       const volume = await run("ffmpeg", ["-hide_banner", "-i", options.input, "-vn", "-af", "volumedetect", "-f", "null", "-"]);
-      const maxVolume = volume.stderr.match(/max_volume:\\s*(-?\\d+(?:\\.\\d+)?)\\s*dB/i);
+      const maxVolume = volume.stderr.match(/max_volume:\s*(-?\d+(?:\.\d+)?)\s*dB/i);
       const hasAudibleAudio = maxVolume !== null && Number.isFinite(Number(maxVolume[1]));
       if (hasAudibleAudio) {
         args.push("-af", "loudnorm=I=-16:TP=-1.5:LRA=11", "-c:a", "aac", "-b:a", "192k");
