@@ -17,6 +17,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Install FFmpeg
+        uses: FedericoCarboni/setup-ffmpeg@v3
       - name: Verify FFmpeg tools
         run: |
           ffmpeg -version
