@@ -43,3 +43,18 @@ Editor audiovisual premium multi-tenant para a 09 Comunicação e seus clientes.
 
 ## Fora do escopo inicial
 Editor de timeline manual completo tipo Premiere; publicação automática; clonagem de voz; geração irrestrita de imagens/vídeos; processamento síncrono dentro da Vercel.
+
+
+## Fundação já provisionada
+No projeto Supabase **09 AI Agency** (separado do Fechou AI) foram criadas e verificadas:
+- `video_projects`: projetos e briefings por organização.
+- `video_project_members`: associação de usuários a projetos com papéis client/reviewer/editor/producer.
+- `video_assets`: inventário dos originais, proxies, áudios, imagens, legendas e exports.
+- `video_edits`: versões do EDL e estados de aprovação.
+- `video_jobs`: fila durável com idempotência e tentativas.
+- `video_approvals`: decisões e feedbacks.
+- Bucket privado `09-video-ai`, limite inicial de 2 GB por arquivo e MIME types restritos.
+
+As tabelas têm RLS habilitado. Acesso de cliente é por associação explícita ao projeto; liderança ativa da organização mantém acesso operacional. As políticas de associação exigem que o usuário convidado já seja membro ativo da organização. Os arquivos ficam em bucket privado e usam o UUID do projeto como primeiro segmento do caminho.
+
+As migrations versionadas estão em `supabase/migrations`. O hardening removeu a política permissiva sobreposta e adicionou índices para chaves estrangeiras. O Advisor de segurança não apontou problemas novos no módulo; permanece um aviso preexistente do projeto sobre proteção contra senhas vazadas desabilitada.
