@@ -5,6 +5,7 @@ import { mkdtemp, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, extname, join } from "node:path";
 import { pipeline } from "node:stream/promises";
+import { Readable } from "node:stream";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 
@@ -54,7 +55,7 @@ async function downloadToFile(client: SupabaseClient, storagePath: string, targe
   if (error || !data?.signedUrl) throw error ?? new Error("Não foi possível gerar URL temporária do original.");
   const response = await fetch(data.signedUrl);
   if (!response.ok || !response.body) throw new Error("Falha ao baixar o original: HTTP " + response.status);
-  await pipeline(response.body, createWriteStream(target));
+  await pipeline(Readable.fromWeb(response.body as import("node:stream/web").ReadableStream<Uint8Array>), createWriteStream(target));
 }
 
 function uploadTus(filePath: string, storagePath: string, contentType: string): Promise<void> {
