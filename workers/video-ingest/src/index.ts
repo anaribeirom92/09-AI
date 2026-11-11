@@ -145,22 +145,23 @@ async function main() {
     const scaleCrop = `scale=${width}:${options.height}:force_original_aspect_ratio=increase,crop=${width}:${options.height},setsar=1`;
     const outputTemp = resolve(temp, "render.mp4");
     const graph = buildEditFilterGraph(segments, Boolean(audio));
-    const filter = `${graph.filter_complex};[vout]${scaleCrop},fps=30[vfinal]`;
-    const args = ["-hide_banner", "-y", "-i", options.input, "-filter_complex", filter, "-map", "[vfinal]"];
-    if (graph.audio_map) args.push("-map", graph.audio_map);
-    args.push("-c:v", "libx264", "-preset", "medium", "-crf", "20", "-pix_fmt", "yuv420p");
+    let filter = `${graph.filter_complex};[vout]${scaleCrop},fps=30[vfinal]`;
+    let audioMap = graph.audio_map;
     let audioNormalized = false;
     if (audio) {
       const volume = await run("ffmpeg", ["-hide_banner", "-i", options.input, "-vn", "-af", "volumedetect", "-f", "null", "-"]);
       const maxVolume = volume.stderr.match(/max_volume:\s*(-?\d+(?:\.\d+)?)\s*dB/i);
       const hasAudibleAudio = maxVolume !== null && Number.isFinite(Number(maxVolume[1])) && Number(maxVolume[1]) > -90;
       if (hasAudibleAudio) {
-        args.push("-af", "loudnorm=I=-16:TP=-1.5:LRA=11", "-c:a", "aac", "-b:a", "192k");
+        filter += ";[aout]loudnorm=I=-16:TP=-1.5:LRA=11[anorm]";
+        audioMap = "[anorm]";
         audioNormalized = true;
-      } else {
-        args.push("-c:a", "aac", "-b:a", "192k");
       }
     }
+    const args = ["-hide_banner", "-y", "-i", options.input, "-filter_complex", filter, "-map", "[vfinal]"];
+    if (audioMap) args.push("-map", audioMap);
+    args.push("-c:v", "libx264", "-preset", "medium", "-crf", "20", "-pix_fmt", "yuv420p");
+    if (audio) args.push("-c:a", "aac", "-b:a", "192k");
     args.push("-movflags", "+faststart", "-shortest", outputTemp);
     await run("ffmpeg", args);
     await run("ffmpeg", ["-v", "error", "-i", outputTemp, "-f", "null", "-"]);
