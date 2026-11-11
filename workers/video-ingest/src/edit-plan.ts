@@ -92,6 +92,8 @@ export function validateEditPlan(plan: EditPlan): string[] {
     if (!Number.isFinite(segment.source_start_seconds) || segment.source_start_seconds < 0) errors.push(`Segmento ${index + 1}: início inválido.`);
     if (!Number.isFinite(segment.source_end_seconds) || segment.source_end_seconds <= segment.source_start_seconds) errors.push(`Segmento ${index + 1}: intervalo inválido.`);
     if (segment.source_end_seconds > plan.source.duration_seconds) errors.push(`Segmento ${index + 1}: ultrapassa a duração original.`);
+    if (!Number.isFinite(segment.duration_seconds) || segment.duration_seconds <= 0) errors.push(`Segmento ${index + 1}: duração inválida.`);
+    if (!Number.isFinite(segment.timeline_start_seconds) || segment.timeline_start_seconds < 0) errors.push(`Segmento ${index + 1}: posição na timeline inválida.`);
     if (Math.abs(segment.duration_seconds - (segment.source_end_seconds - segment.source_start_seconds)) > 0.01) {
       errors.push(`Segmento ${index + 1}: duração inconsistente.`);
     }
