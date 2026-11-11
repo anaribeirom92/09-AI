@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param([switch]$SkipNpmInstall)
 $ErrorActionPreference = 'Stop'
-$RepoRoot = Split-Path -Parent $PSScriptRoot
+$RepoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $Worker = Join-Path $RepoRoot 'workers/video-ingest'
 $Tools = Join-Path $RepoRoot '.local-tools'
 $FfmpegRoot = Join-Path $Tools 'ffmpeg'
