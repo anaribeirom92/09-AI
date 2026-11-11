@@ -2,7 +2,7 @@ import { access, copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promise
 import { tmpdir } from "node:os";
 import { basename, dirname, resolve } from "node:path";
 import { spawn } from "node:child_process";
-import { parseSilences } from "./silence.js";
+import { parseSilences, type SilenceInterval } from "./silence.js";
 
 type Aspect = "9:16" | "16:9" | "1:1";
 type Options = { input: string; output?: string; aspect: Aspect; height: 720 | 1080 | 1440 | 2160; analyzeOnly: boolean; silenceNoise: string; silenceDuration: number; report?: string };
@@ -45,7 +45,7 @@ async function analyze(options: Options, probe: { format?: { duration?: string; 
   const video = probe.streams?.find(stream => stream.codec_type === "video");
   if (!video) throw new Error("O arquivo não contém uma faixa de vídeo.");
   const audioStream = probe.streams?.find(stream => stream.codec_type === "audio");
-  let silences: Silence[] = [];
+  let silences: SilenceInterval[] = [];
   if (audioStream) {
     const result = await run("ffmpeg", ["-hide_banner", "-i", options.input, "-vn", "-af", `silencedetect=noise=${options.silenceNoise}:d=${options.silenceDuration}`, "-f", "null", "-"]);
     silences = parseSilences(result.stderr, Number(probe.format?.duration ?? 0));
