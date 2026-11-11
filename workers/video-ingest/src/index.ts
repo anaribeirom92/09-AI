@@ -59,7 +59,7 @@ async function main(){
     await run("ffmpeg",["-v","error","-i",outputTemp,"-f","null","-"]);
     const { copyFile }=await import("node:fs/promises");
     await copyFile(outputTemp,options.output);
-    console.log(JSON.stringify({ok:true,input:basename(options.input),output:options.output,duration_seconds:Number(probe.format?.duration??0),source:{format:probe.format?.format_name??null,width:video.width??null,height:video.height??null,video_codec:video.codec_name??null,audio},render:{aspect:options.aspect,width,height,video_codec:"h264",audio_normalized:audio}},null,2));
+    console.log(JSON.stringify({ok:true,input:basename(options.input),output:options.output,duration_seconds:Number(probe.format?.duration??0),source:{format:probe.format?.format_name??null,width:video.width??null,height:video.height??null,video_codec:video.codec_name??null,audio},render:{aspect:options.aspect,width,height:options.height,video_codec:"h264",audio_normalized:audio}},null,2));
   } finally { await rm(temp,{recursive:true,force:true}); }
 }
 main().catch(error=>{console.error("[09 VIDEO AI]",error instanceof Error?error.message:error);process.exitCode=1;});
