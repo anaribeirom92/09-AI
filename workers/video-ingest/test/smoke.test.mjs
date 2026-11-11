@@ -47,3 +47,22 @@ test("full local pipeline analyzes, exports EDL and renders a synthetic video", 
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("renders video-only sources without inventing an audio track", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "09-video-ai-no-audio-"));
+  try {
+    const input = join(dir, "silent-source.mp4");
+    const output = join(dir, "silent-render.mp4");
+    run("ffmpeg", [
+      "-hide_banner", "-loglevel", "error", "-y",
+      "-f", "lavfi", "-i", "color=c=black:s=320x240:r=25:d=1",
+      "-an", "-c:v", "libx264", "-pix_fmt", "yuv420p", input
+    ]);
+    run("node", [cli, "--input", input, "--output", output, "--aspect", "16:9", "--height", "720"]);
+    const probe = JSON.parse(run("ffprobe", ["-v", "error", "-show_streams", "-of", "json", output]));
+    assert.ok(probe.streams.some(stream => stream.codec_type === "video"));
+    assert.ok(!probe.streams.some(stream => stream.codec_type === "audio"));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
