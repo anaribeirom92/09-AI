@@ -43,6 +43,14 @@ test("full local pipeline analyzes, exports EDL and renders a synthetic video", 
     assert.equal(video.width, 406);
     assert.equal(video.height, 720);
     assert.ok(probe.streams.some(stream => stream.codec_type === "audio"));
+
+    const fadedOutput = join(dir, "faded-render.mp4");
+    const fadedResult = JSON.parse(run("node", [cli, "--input", input, "--output", fadedOutput, "--aspect", "16:9", "--height", "720", "--fade-in", "0.25", "--fade-out", "0.25"]));
+    assert.equal(fadedResult.render.fade_in_seconds, 0.25);
+    assert.equal(fadedResult.render.fade_out_seconds, 0.25);
+    const fadedProbe = JSON.parse(run("ffprobe", ["-v", "error", "-show_streams", "-of", "json", fadedOutput]));
+    assert.ok(fadedProbe.streams.some(stream => stream.codec_type === "video"));
+    assert.ok(fadedProbe.streams.some(stream => stream.codec_type === "audio"));
     const captions = join(dir, "captions.srt");
     const captionedOutput = join(dir, "captioned-render.mp4");
     await import("node:fs/promises").then(({ writeFile }) => writeFile(captions, "1\n00:00:00,250 --> 00:00:01,500\nLegenda de teste", "utf8"));
