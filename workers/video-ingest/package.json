@@ -1,0 +1,15 @@
+{
+  "name": "09-video-ai-local",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "test": "npm run build && node --test test/*.test.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "22.15.0",
+    "typescript": "5.9.2"
+  }
+}

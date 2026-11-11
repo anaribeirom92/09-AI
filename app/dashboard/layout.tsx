@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Bot, CheckSquare, ClipboardList, LayoutDashboard, ShieldCheck, Sparkles } from "lucide-react";
+import { Bot, CheckSquare, ClipboardList, LayoutDashboard, ShieldCheck, Sparkles, Film } from "lucide-react";
 import { getAgencyContext } from "@/lib/agency";
 import { SignOutButton } from "@/components/sign-out-button";
 const nav = [
@@ -9,6 +9,7 @@ const nav = [
   {href:"/dashboard/projects",label:"Projetos",icon:ClipboardList},
   {href:"/dashboard/tasks",label:"Tarefas",icon:CheckSquare},
   {href:"/dashboard/approvals",label:"Aprovações",icon:ShieldCheck},
+  {href:"/dashboard/video-ai",label:"09 VIDEO AI",icon:Film},
 ];
 export default async function DashboardLayout({children}:{children:React.ReactNode}) {
   const {userId,membership,organization} = await getAgencyContext();

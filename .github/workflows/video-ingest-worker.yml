@@ -1,0 +1,31 @@
+name: 09 VIDEO AI local engine
+on:
+  pull_request:
+    paths:
+      - "workers/video-ingest/**"
+      - ".github/workflows/video-ingest-worker.yml"
+  push:
+    branches: [main]
+    paths:
+      - "workers/video-ingest/**"
+      - ".github/workflows/video-ingest-worker.yml"
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install FFmpeg
+        uses: FedericoCarboni/setup-ffmpeg@v3
+      - name: Verify FFmpeg tools
+        run: |
+          ffmpeg -version
+          ffprobe -version
+      - name: Install dependencies
+        working-directory: workers/video-ingest
+        run: npm install
+      - name: Build and test local engine
+        working-directory: workers/video-ingest
+        run: npm test
