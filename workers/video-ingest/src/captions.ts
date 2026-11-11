@@ -83,5 +83,5 @@ export function serializeSrt(cues: CaptionCue[]): string {
     const millis = ms % 1000;
     return [hours, minutes, secs].map(value => String(value).padStart(2, "0")).join(":") + "," + String(millis).padStart(3, "0");
   };
-  return cues.map((cue, index) => `${index + 1}\\n${stamp(cue.start_seconds)} --> ${stamp(cue.end_seconds)}\\n${cue.text}`).join("\\n\\n") + (cues.length ? "\\n" : "");
+  return cues.map((cue, index) => `${index + 1}\n${stamp(cue.start_seconds)} --> ${stamp(cue.end_seconds)}\n${cue.text}`).join("\n\n") + (cues.length ? "\n" : "");
 }
