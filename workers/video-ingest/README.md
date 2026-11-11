@@ -23,7 +23,8 @@ O 09 VIDEO AI é um agente interno da 09 Comunicação Integrada. A experiência
 - Validação do arquivo renderizado.
 - Diretório temporário removido ao final; o arquivo original nunca é sobrescrito.
 - Análise de silêncio e exportação de relatório JSON.
-- EDL conservador que mantém o vídeo inteiro e sinaliza pausas para revisão; não aplica cortes.
+- EDL conservador que mantém o vídeo inteiro e sinaliza pausas para revisão; não aplica cortes automaticamente.
+- Renderização de segmentos de um plano explicitamente aprovado: o motor concatena os trechos mantidos e sincroniza vídeo/áudio. Planos pendentes de revisão são recusados.
 - Leitura e validação de legendas SRT, incluindo vírgula/ponto nos milissegundos e texto multilinha.
 
 ## Desenvolvimento e testes
@@ -40,6 +41,14 @@ Para executar um render de referência:
 ```bash
 npm start -- --input ./bruto.mp4 --output ./final.mp4 --aspect 9:16 --height 1080
 ```
+
+Para renderizar um plano aprovado, forneça um JSON de edição com `status: "approved"`, `safety.requires_human_review: false`, `review_items: []` e segmentos `keep` em timeline contínua. A aprovação é explícita e não é feita automaticamente pelo motor:
+
+```bash
+npm start -- --input ./bruto.mp4 --output ./final.mp4 --edit-plan ./plano-aprovado.json --aspect 9:16 --height 1080
+```
+
+O comando recusa planos com revisão pendente, segmentos inválidos ou duração de origem incompatível. Os cortes correspondem aos intervalos omitidos entre os segmentos `keep`.
 
 Para analisar pausas sem renderizar:
 
@@ -59,7 +68,7 @@ A integração opcional existente com whisper.cpp exige um executável `whisper-
 - Runtime de processamento transitório compatível com o ambiente de uso do ChatGPT.
 - Devolução do MP4 final como anexo na conversa.
 - Transcrição automática integrada ao fluxo principal.
-- Edição semântica: identificar erros de fala, selecionar melhores takes e remover trechos com compreensão de contexto.
+- Edição semântica: identificar erros de fala, selecionar melhores takes e gerar automaticamente um plano de cortes com compreensão de contexto. O renderizador já executa segmentos aprovados, mas o agente ainda não produz esse plano semântico.
 - Legendas animadas e sincronizadas geradas automaticamente.
 - B-roll, títulos, motion graphics e montagem final guiada pelo briefing.
 - Validação audiovisual automatizada da edição criativa final.
