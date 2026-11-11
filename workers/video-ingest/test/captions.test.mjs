@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { parseSrt } from "../dist/captions.js";
+import { mapCaptionsToTimeline, parseSrt, serializeSrt } from "../dist/captions.js";
 
 test("parses SRT timestamps and multiline captions", () => {
   assert.deepEqual(parseSrt("1\n00:00:01,250 --> 00:00:02,500\nOlá, mundo!\nSegunda linha"), [
@@ -26,4 +26,21 @@ test("rejects captions extending beyond known media duration", () => {
 
 test("returns an empty list for empty subtitle files", () => {
   assert.deepEqual(parseSrt("  "), []);
+});
+
+test("maps captions onto the output timeline after approved cuts", () => {
+  const cues = parseSrt("1\\n00:00:00,500 --> 00:00:02,000\\nOlá\\n\\n2\\n00:00:03,000 --> 00:00:04,000\\nTudo bem?", 5);
+  const mapped = mapCaptionsToTimeline(cues, [
+    { source_start_seconds: 0, source_end_seconds: 1, timeline_start_seconds: 0 },
+    { source_start_seconds: 3, source_end_seconds: 5, timeline_start_seconds: 1 }
+  ]);
+  assert.deepEqual(mapped, [
+    { index: 1, start_seconds: 0.5, end_seconds: 1, text: "Olá" },
+    { index: 2, start_seconds: 1, end_seconds: 2, text: "Tudo bem?" }
+  ]);
+});
+
+test("serializes timeline captions as valid SRT", () => {
+  const cues = [{ index: 1, start_seconds: 1.25, end_seconds: 2.5, text: "Olá\\n mundo" }];
+  assert.equal(serializeSrt(cues), "1\\n00:00:01,250 --> 00:00:02,500\\nOlá\\n mundo\\n");
 });
