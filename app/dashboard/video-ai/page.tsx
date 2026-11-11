@@ -24,7 +24,7 @@ export default function VideoAIPage() {
       <div className="video-ai-hero-copy">
         <span className="video-ai-kicker"><WandSparkles size={14}/> SEU NOVO ESTÚDIO DE PÓS-PRODUÇÃO</span>
         <h2>Você direciona.<br/><em>A IA edita.</em></h2>
-        <p>Envie o material bruto, descreva a intenção criativa e acompanhe cada etapa até a aprovação do vídeo final.</p>
+        <p>A equipe da 09 envia o material bruto, define a direção criativa e acompanha cada etapa até a aprovação interna do vídeo final.</p>
         <div className="video-ai-tags"><span>ÁUDIO</span><span>LEGENDAS</span><span>MOTION</span><span>B-ROLL</span><span>RENDER 4K*</span></div>
         <small>*Resolução final será definida conforme o arquivo de origem e a capacidade de renderização.</small>
       </div>
@@ -62,7 +62,7 @@ export default function VideoAIPage() {
 
     <section className="video-ai-next">
       <div className="video-ai-next-icon"><ShieldCheck size={20}/></div>
-      <div><b>Produção com controle e aprovação</b><p>O arquivo original será preservado. A IA propõe a edição; você ou o cliente aprovam antes do render final e da entrega.</p></div>
+      <div><b>Produção com controle e aprovação</b><p>O arquivo original será preservado. A IA propõe a edição; a equipe da 09 revisa e aprova antes do render final e da entrega ao cliente.</p></div>
       <span><Clock3 size={14}/> FASE 0 / 5</span>
     </section>
     <div className="video-ai-footnote"><ArrowUpRight size={14}/> O próximo marco é ativar projetos, upload privado e fila de processamento. Nenhum vídeo será enviado ou processado até a conclusão dessa etapa.</div>
