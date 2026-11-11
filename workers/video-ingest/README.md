@@ -48,6 +48,19 @@ O módulo `src/edit-plan.ts` define um formato estruturado para decisões de edi
 
 O módulo `src/captions.ts` lê arquivos SRT sem dependências externas, aceita milissegundos com vírgula ou ponto, preserva legendas em múltiplas linhas e valida ordem cronológica, timestamps e duração opcional do vídeo. Nesta etapa ele apenas interpreta e valida legendas fornecidas; ainda não transcreve fala nem grava legendas no vídeo.
 
+## Transcrição offline com whisper.cpp (opcional)
+
+A transcrição pode ser executada localmente quando o executável `whisper-cli` e um modelo GGML já estiverem instalados no computador. O motor não baixa executáveis nem modelos automaticamente.
+
+Exemplo (português do Brasil):
+```bash
+npm start -- --input ./bruto.mp4 --transcribe --whisper-model ./models/ggml-base.bin --output ./legendas.srt --language pt
+```
+
+Se o executável não estiver no PATH, informe-o com `--whisper-bin ./caminho/whisper-cli`. O áudio é convertido temporariamente para WAV mono de 16 kHz, processado pelo Whisper em CPU e removido ao final. O SRT é validado contra a duração do vídeo antes de ser salvo. O arquivo original não é alterado.
+
+Modelos são downloads separados e ocupam espaço local. O modelo `tiny` ocupa cerca de 75 MiB e usa aproximadamente 273 MB de memória; `base` ocupa cerca de 142 MiB e usa aproximadamente 388 MB. Para começar em máquinas modestas, avalie `tiny` ou `base`; a qualidade e velocidade dependem do equipamento e do áudio. Nenhum modelo é baixado por este projeto sem escolha explícita da equipe.
+
 ## Testes
 
 ```bash
