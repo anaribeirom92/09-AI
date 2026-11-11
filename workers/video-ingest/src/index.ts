@@ -126,6 +126,13 @@ async function processJob(job: VideoJob) {
   const storagePath = job.payload.storage_path;
   const assetId = job.payload.asset_id;
   if (!storagePath || !assetId) throw new Error("Job sem asset_id ou storage_path.");
+  const { data: sourceAsset, error: sourceAssetError } = await supabase
+    .from("video_assets").select("mime_type,kind").eq("id", assetId).single();
+  if (sourceAssetError || !sourceAsset) throw sourceAssetError ?? new Error("Asset de origem não encontrado.");
+  const isImage = String(sourceAsset.mime_type).startsWith("image/");
+  const isVideo = String(sourceAsset.mime_type).startsWith("video/");
+  const isAudio = String(sourceAsset.mime_type).startsWith("audio/");
+  if (!isImage && !isVideo && !isAudio) throw new Error("Tipo de mídia não suportado pelo worker.");
   const workDir = await mkdtemp(join(tmpdir(), "09-video-"));
   try {
     const original = join(workDir, "original" + (extname(storagePath) || ".bin"));
@@ -138,23 +145,32 @@ async function processJob(job: VideoJob) {
     const duration = Number(probe.format?.duration ?? 0);
     const videoStream = probe.streams?.find(stream => stream.codec_type === "video");
     const audioStream = probe.streams?.find(stream => stream.codec_type === "audio");
-    if (!videoStream && !audioStream) throw new Error("O arquivo não contém uma faixa de áudio ou vídeo reconhecível.");
+    if (isVideo && !videoStream) throw new Error("O arquivo de vídeo não contém uma faixa de vídeo reconhecível.");
+    if (isAudio && !audioStream) throw new Error("O arquivo de áudio não contém uma faixa de áudio reconhecível.");
+    if (isImage && !videoStream) throw new Error("A imagem não pôde ser decodificada.");
 
-    const thumbnailPath = videoStream ? `${job.project_id}/${randomUUID()}/thumbnail.jpg` : null;
-    const proxyPath = videoStream ? `${job.project_id}/${randomUUID()}/proxy.mp4` : null;
-    if (videoStream) {
-      const seek = Math.max(0, Math.min(duration * 0.1, Math.max(0, duration - 0.1)));
-      await run("ffmpeg", ["-y", "-ss", String(seek), "-i", original, "-frames:v", "1", "-vf", "scale='min(640,iw)':-2", "-q:v", "4", thumbnail]);
-      await run("ffmpeg", ["-y", "-i", original, "-vf", "scale='min(960,iw)':-2", "-c:v", "libx264", "-preset", "veryfast", "-crf", "28", "-c:a", "aac", "-b:a", "96k", "-movflags", "+faststart", proxy]);
+    const thumbnailPath = (isVideo || isImage) ? `${job.project_id}/${randomUUID()}/thumbnail.jpg` : null;
+    const proxyPath = isVideo ? `${job.project_id}/${randomUUID()}/proxy.mp4` : null;
+    if (isVideo || isImage) {
+      if (isVideo) {
+        const seek = Math.max(0, Math.min(duration * 0.1, Math.max(0, duration - 0.1)));
+        await run("ffmpeg", ["-y", "-ss", String(seek), "-i", original, "-frames:v", "1", "-vf", "scale='min(640,iw)':-2", "-q:v", "4", thumbnail]);
+      } else {
+        await run("ffmpeg", ["-y", "-i", original, "-frames:v", "1", "-vf", "scale='min(640,iw)':-2", "-q:v", "4", thumbnail]);
+      }
+      if (isVideo) {
+        await run("ffmpeg", ["-y", "-i", original, "-vf", "scale='min(960,iw)':-2", "-c:v", "libx264", "-preset", "veryfast", "-crf", "28", "-c:a", "aac", "-b:a", "96k", "-movflags", "+faststart", proxy]);
+      }
       await uploadTus(thumbnail, thumbnailPath!, "image/jpeg");
-      await uploadTus(proxy, proxyPath!, "video/mp4");
+      if (proxyPath) await uploadTus(proxy, proxyPath, "video/mp4");
     }
 
     const baseMetadata = {
       duration_ms: Math.round(duration * 1000),
       source_format: probe.format?.format_name ?? null,
       video: videoStream ? { codec: videoStream.codec_name ?? null, width: videoStream.width ?? null, height: videoStream.height ?? null, frame_rate: videoStream.r_frame_rate ?? null } : null,
-      audio: audioStream ? { codec: audioStream.codec_name ?? null, sample_rate: audioStream.sample_rate ?? null, channels: audioStream.channels ?? null } : null
+      audio: audioStream ? { codec: audioStream.codec_name ?? null, sample_rate: audioStream.sample_rate ?? null, channels: audioStream.channels ?? null } : null,
+      media_kind: sourceAsset.kind
     };
     const assets = [];
     if (thumbnailPath) assets.push({ id: randomUUID(), organization_id: job.organization_id, project_id: job.project_id, kind: "thumbnail", storage_path: thumbnailPath, original_filename: "thumbnail.jpg", mime_type: "image/jpeg", size_bytes: (await stat(thumbnail)).size, duration_ms: null, metadata: { generated_by: "ingest_worker", source_asset_id: assetId }, created_by: null });
