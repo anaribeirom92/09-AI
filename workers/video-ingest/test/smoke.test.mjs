@@ -34,6 +34,9 @@ test("full local pipeline analyzes, exports EDL and renders a synthetic video", 
     const editPlan = JSON.parse(await readFile(plan, "utf8"));
     assert.equal(analysis.status, "analysis_only");
     assert.equal(analysis.safety.automatic_cuts_applied, false);
+    assert.equal(analysis.scene_analysis.detector, "ffmpeg select(scene)");
+    assert.ok(Array.isArray(analysis.scene_analysis.candidate_timestamps_seconds));
+    assert.equal(analysis.scene_analysis.threshold, 0.3);
     assert.equal(editPlan.status, "needs_review");
     assert.equal(editPlan.segments[0].source_end_seconds, 2);
 
