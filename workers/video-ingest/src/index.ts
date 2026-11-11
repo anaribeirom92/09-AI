@@ -83,7 +83,7 @@ async function main() {
     if (options.plan) {
       const plan = createReviewEditPlan({ ...analysis, edit_suggestions: analysis.edit_suggestions as ReviewItem[] }, { aspect: options.aspect, height: options.height });
       await mkdir(dirname(options.plan), { recursive: true });
-      await writeFile(options.plan, JSON.stringify(plan, null, 2) + "\\n", "utf8");
+      await writeFile(options.plan, JSON.stringify(plan, null, 2) + "\n", "utf8");
       planPath = options.plan;
     }
     console.log(JSON.stringify({ ok: true, mode: "analysis", report: reportPath, plan: planPath ?? null, duration_seconds: analysis.duration_seconds, detected_silences: analysis.audio_analysis.detected_silence_count, automatic_cuts_applied: false }, null, 2));
