@@ -23,7 +23,7 @@ O motor:
 - inspeciona o original com FFprobe;
 - converte para H.264/AAC em MP4;
 - enquadra no formato solicitado;
-- normaliza o volume de áudio quando existe faixa de áudio;
+- normaliza o volume de áudio quando existe conteúdo audível; faixas de silêncio digital são preservadas sem aplicar `loudnorm`, evitando falhas de codificação;
 - valida o arquivo renderizado;
 - usa pasta temporária do sistema e a apaga ao terminar;
 - nunca sobrescreve o arquivo original.
@@ -50,7 +50,7 @@ O módulo `src/edit-plan.ts` define um formato estruturado para decisões de edi
 npm test
 ```
 
-Os testes cobrem parsing de silêncio (intervalos fechados, silêncio final, múltiplos intervalos e dados inválidos), geração/validação de planos de edição e um smoke test de ponta a ponta com vídeo sintético. O CI instala FFmpeg e valida análise, exportação EDL e renderização.
+Os testes cobrem parsing de silêncio (intervalos fechados, silêncio final, múltiplos intervalos e dados inválidos), geração/validação de planos de edição e smoke tests de ponta a ponta com vídeo sintético, fonte sem áudio e faixa de áudio em silêncio digital. O CI instala FFmpeg e valida análise, exportação EDL e renderização.
 
 ## Limites desta fundação
 
