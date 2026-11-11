@@ -22,7 +22,7 @@ Editor audiovisual premium de uso exclusivamente interno da equipe da 09 Comunic
 4. Revisão: exibir roteiro visual e permitir aprovação/ajustes antes do render.
 5. Render: FFmpeg + Remotion; gerar MP4 H.264/AAC e variantes 9:16, 16:9 e 1:1.
 6. QA: verificar duração, áudio, sincronização, safe areas, frames pretos e arquivo final.
-7. Entrega: prévia com marca d'água opcional, aprovação do cliente e export final.
+7. Entrega: prévia com marca d'água opcional, aprovação interna da equipe 09 e export final.
 
 ## Governança e segurança
 - Nunca sobrescrever o original.
@@ -35,11 +35,11 @@ Editor audiovisual premium de uso exclusivamente interno da equipe da 09 Comunic
 
 ## Fases
 - **F0 — Fundação:** módulo, arquitetura, navegação e interface inicial.
-- **F1 — Projetos e ingestão:** schema, Storage privado, upload assinado, validação e proxies.
+- **F1 — Projetos e ingestão:** projetos internos, briefing, upload autenticado no Storage privado, metadados e fila durável de ingestão. A interface inicial desta fase já está em implementação.
 - **F2 — Análise:** transcrição, cenas, pausas, EDL e revisão.
 - **F3 — Render premium:** worker FFmpeg/Remotion, legendas, motion, B-roll e QA.
 - **F4 — Conversa:** integração segura do agente no ChatGPT e no dashboard.
-- **F5 — Clientes:** convites, permissões, limites de uso, cobrança e white-label leve.
+- **F5 — Operação e escala:** monitoramento do worker, limites de processamento, custos, observabilidade e otimização do fluxo interno.
 
 ## Fora do escopo inicial
 Editor de timeline manual completo tipo Premiere; publicação automática; clonagem de voz; geração irrestrita de imagens/vídeos; processamento síncrono dentro da Vercel.
