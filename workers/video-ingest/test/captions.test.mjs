@@ -29,7 +29,7 @@ test("returns an empty list for empty subtitle files", () => {
 });
 
 test("maps captions onto the output timeline after approved cuts", () => {
-  const cues = parseSrt("1\\n00:00:00,500 --> 00:00:02,000\\nOlá\\n\\n2\\n00:00:03,000 --> 00:00:04,000\\nTudo bem?", 5);
+  const cues = parseSrt("1\n00:00:00,500 --> 00:00:02,000\nOlá\n\n2\n00:00:03,000 --> 00:00:04,000\nTudo bem?", 5);
   const mapped = mapCaptionsToTimeline(cues, [
     { source_start_seconds: 0, source_end_seconds: 1, timeline_start_seconds: 0 },
     { source_start_seconds: 3, source_end_seconds: 5, timeline_start_seconds: 1 }
@@ -41,6 +41,6 @@ test("maps captions onto the output timeline after approved cuts", () => {
 });
 
 test("serializes timeline captions as valid SRT", () => {
-  const cues = [{ index: 1, start_seconds: 1.25, end_seconds: 2.5, text: "Olá\\n mundo" }];
-  assert.equal(serializeSrt(cues), "1\\n00:00:01,250 --> 00:00:02,500\\nOlá\\n mundo\\n");
+  const cues = [{ index: 1, start_seconds: 1.25, end_seconds: 2.5, text: "Olá\n mundo" }];
+  assert.equal(serializeSrt(cues), "1\n00:00:01,250 --> 00:00:02,500\nOlá\n mundo\n");
 });
