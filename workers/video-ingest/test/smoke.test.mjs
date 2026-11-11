@@ -45,7 +45,7 @@ test("full local pipeline analyzes, exports EDL and renders a synthetic video", 
     assert.ok(probe.streams.some(stream => stream.codec_type === "audio"));
     const captions = join(dir, "captions.srt");
     const captionedOutput = join(dir, "captioned-render.mp4");
-    await import("node:fs/promises").then(({ writeFile }) => writeFile(captions, "1\\n00:00:00,250 --> 00:00:01,500\\nLegenda de teste", "utf8"));
+    await import("node:fs/promises").then(({ writeFile }) => writeFile(captions, "1\n00:00:00,250 --> 00:00:01,500\nLegenda de teste", "utf8"));
     const captionResult = JSON.parse(run("node", [cli, "--input", input, "--output", captionedOutput, "--captions", captions, "--aspect", "16:9", "--height", "720"]));
     assert.equal(captionResult.render.captions_burned_in, 1);
     const captionProbe = JSON.parse(run("ffprobe", ["-v", "error", "-show_streams", "-of", "json", captionedOutput]));
