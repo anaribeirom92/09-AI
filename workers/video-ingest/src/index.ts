@@ -102,12 +102,23 @@ async function main() {
     const args = ["-hide_banner", "-y", "-i", options.input, "-map", "0:v:0"];
     if (audio) args.push("-map", "0:a:0?");
     args.push("-vf", `${scaleCrop},fps=30`, "-c:v", "libx264", "-preset", "medium", "-crf", "20", "-pix_fmt", "yuv420p");
-    if (audio) args.push("-af", "loudnorm=I=-16:TP=-1.5:LRA=11", "-c:a", "aac", "-b:a", "192k");
+    let audioNormalized = false;
+    if (audio) {
+      const volume = await run("ffmpeg", ["-hide_banner", "-i", options.input, "-vn", "-af", "volumedetect", "-f", "null", "-"]);
+      const maxVolume = volume.stderr.match(/max_volume:\\s*(-?\\d+(?:\\.\\d+)?)\\s*dB/i);
+      const hasAudibleAudio = maxVolume !== null && Number.isFinite(Number(maxVolume[1]));
+      if (hasAudibleAudio) {
+        args.push("-af", "loudnorm=I=-16:TP=-1.5:LRA=11", "-c:a", "aac", "-b:a", "192k");
+        audioNormalized = true;
+      } else {
+        args.push("-c:a", "aac", "-b:a", "192k");
+      }
+    }
     args.push("-movflags", "+faststart", "-shortest", outputTemp);
     await run("ffmpeg", args);
     await run("ffmpeg", ["-v", "error", "-i", outputTemp, "-f", "null", "-"]);
     await copyFile(outputTemp, options.output);
-    console.log(JSON.stringify({ ok: true, input: basename(options.input), output: options.output, duration_seconds: analysis.duration_seconds, detected_silences_for_review: analysis.audio_analysis.detected_silence_count, source: analysis.source, render: { aspect: options.aspect, width, height: options.height, video_codec: "h264", audio_normalized: audio } }, null, 2));
+    console.log(JSON.stringify({ ok: true, input: basename(options.input), output: options.output, duration_seconds: analysis.duration_seconds, detected_silences_for_review: analysis.audio_analysis.detected_silence_count, source: analysis.source, render: { aspect: options.aspect, width, height: options.height, video_codec: "h264", audio_normalized: audioNormalized, silent_audio_preserved_without_normalization: audio && !audioNormalized } }, null, 2));
   } finally { await rm(temp, { recursive: true, force: true }); }
 }
 main().catch(error => { console.error("[09 VIDEO AI]", error instanceof Error ? error.message : error); process.exitCode = 1; });
