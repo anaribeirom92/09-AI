@@ -31,10 +31,15 @@ export function parseSrt(content: string, mediaDuration?: number): CaptionCue[] 
     const lines = block.split("\n").map(line => line.trimEnd());
     const timingIndex = lines.findIndex(line => line.includes("-->"));
     if (timingIndex < 0) throw new Error(`Bloco ${blockIndex + 1}: linha de tempo ausente.`);
-    const timing = lines[timingIndex].match(/^\s*(\d{2,}:\d{2}:\d{2}[,.]\d{3})\s+-->\s+(\d{2,}:\d{2}:\d{2}[,.]\d{3})(?:\s+.*)?$/);
-    if (!timing) throw new Error(`Bloco ${blockIndex + 1}: linha de tempo inválida.`);
-    const start = parseTimestamp(timing[1]);
-    const end = parseTimestamp(timing[2]);
+
+    const timingParts = lines[timingIndex].split("-->");
+    if (timingParts.length !== 2) throw new Error(`Bloco ${blockIndex + 1}: linha de tempo inválida.`);
+    const startToken = timingParts[0].trim();
+    const endToken = timingParts[1].trim().split(/\s+/)[0];
+    if (!startToken || !endToken) throw new Error(`Bloco ${blockIndex + 1}: linha de tempo inválida.`);
+
+    const start = parseTimestamp(startToken);
+    const end = parseTimestamp(endToken);
     if (end <= start) throw new Error(`Bloco ${blockIndex + 1}: fim deve ser posterior ao início.`);
     if (start < previousStart) throw new Error("As legendas precisam estar em ordem cronológica.");
     if (mediaDuration !== undefined && end > mediaDuration + 0.05) {
