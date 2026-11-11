@@ -3,9 +3,10 @@ import { tmpdir } from "node:os";
 import { basename, dirname, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { parseSilences, type SilenceInterval } from "./silence.js";
+import { createReviewEditPlan } from "./edit-plan.js";
 
 type Aspect = "9:16" | "16:9" | "1:1";
-type Options = { input: string; output?: string; aspect: Aspect; height: 720 | 1080 | 1440 | 2160; analyzeOnly: boolean; silenceNoise: string; silenceDuration: number; report?: string };
+type Options = { input: string; output?: string; aspect: Aspect; height: 720 | 1080 | 1440 | 2160; analyzeOnly: boolean; silenceNoise: string; silenceDuration: number; report?: string; plan?: string };
 type ProcessResult = { stdout: string; stderr: string };
 function parseArgs(args: string[]): Options {
   const values = new Map<string, string>();
@@ -22,14 +23,14 @@ function parseArgs(args: string[]): Options {
   }
   const input = values.get("input"), output = values.get("output");
   const analyzeOnly = values.has("analyze-only");
-  if (!input || (!output && !analyzeOnly)) throw new Error("Uso: npm start -- --input ./bruto.mp4 --output ./final.mp4 [--aspect 9:16|16:9|1:1] [--height 720|1080|1440|2160] [--analyze-only] [--report ./analise.json]");
+  if (!input || (!output && !analyzeOnly)) throw new Error("Uso: npm start -- --input ./bruto.mp4 --output ./final.mp4 [--aspect 9:16|16:9|1:1] [--height 720|1080|1440|2160] [--analyze-only] [--report ./analise.json] [--plan ./plano-edicao.json]");
   const aspect = (values.get("aspect") ?? "9:16") as Aspect;
   const height = Number(values.get("height") ?? "1080") as Options["height"];
   const silenceDuration = Number(values.get("silence-duration") ?? "0.45");
   if (!["9:16", "16:9", "1:1"].includes(aspect)) throw new Error("Proporção inválida.");
   if (![720, 1080, 1440, 2160].includes(height)) throw new Error("Resolução inválida.");
   if (!Number.isFinite(silenceDuration) || silenceDuration < 0.1 || silenceDuration > 10) throw new Error("Duração mínima de silêncio deve estar entre 0.1 e 10 segundos.");
-  return { input: resolve(input), output: output ? resolve(output) : undefined, aspect, height, analyzeOnly, silenceNoise: values.get("silence-noise") ?? "-35dB", silenceDuration, report: values.get("report") ? resolve(values.get("report")!) : undefined };
+  return { input: resolve(input), output: output ? resolve(output) : undefined, aspect, height, analyzeOnly, silenceNoise: values.get("silence-noise") ?? "-35dB", silenceDuration, report: values.get("report") ? resolve(values.get("report")!) : undefined, plan: values.get("plan") ? resolve(values.get("plan")!) : undefined };
 }
 function run(command: string, args: string[]): Promise<ProcessResult> {
   return new Promise((resolvePromise, reject) => {
@@ -68,6 +69,9 @@ async function main() {
   await access(options.input);
   if (options.output && options.input === options.output) throw new Error("O arquivo de saída não pode sobrescrever o original.");
   if (options.report && options.input === options.report) throw new Error("O relatório não pode sobrescrever o vídeo original.");
+  if (options.plan && !options.analyzeOnly) throw new Error("A geração de plano exige --analyze-only.");
+  if (options.plan && options.input === options.plan) throw new Error("O plano não pode sobrescrever o vídeo original.");
+  if (options.plan && options.report && options.plan === options.report) throw new Error("Relatório e plano precisam de caminhos diferentes.");
   const probeResult = await run("ffprobe", ["-v", "error", "-show_format", "-show_streams", "-of", "json", options.input]);
   const probe = JSON.parse(probeResult.stdout) as { format?: { duration?: string; format_name?: string }; streams?: Array<{ codec_type?: string; width?: number; height?: number; codec_name?: string; sample_rate?: string; channels?: number; side_data_list?: Array<{ rotation?: number }> }> };
   const analysis = await analyze(options, probe);
@@ -75,7 +79,14 @@ async function main() {
     const reportPath = options.report ?? resolve(dirname(options.input), basename(options.input).replace(/\.[^.]+$/, "") + ".09-video-analysis.json");
     await mkdir(dirname(reportPath), { recursive: true });
     await writeFile(reportPath, JSON.stringify(analysis, null, 2) + "\n", "utf8");
-    console.log(JSON.stringify({ ok: true, mode: "analysis", report: reportPath, duration_seconds: analysis.duration_seconds, detected_silences: analysis.audio_analysis.detected_silence_count, automatic_cuts_applied: false }, null, 2));
+    let planPath: string | undefined;
+    if (options.plan) {
+      const plan = createReviewEditPlan(analysis, { aspect: options.aspect, height: options.height });
+      await mkdir(dirname(options.plan), { recursive: true });
+      await writeFile(options.plan, JSON.stringify(plan, null, 2) + "\\n", "utf8");
+      planPath = options.plan;
+    }
+    console.log(JSON.stringify({ ok: true, mode: "analysis", report: reportPath, plan: planPath ?? null, duration_seconds: analysis.duration_seconds, detected_silences: analysis.audio_analysis.detected_silence_count, automatic_cuts_applied: false }, null, 2));
     return;
   }
   const video = probe.streams?.find(stream => stream.codec_type === "video");
