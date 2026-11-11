@@ -38,3 +38,21 @@ test("validator catches a plan that claims cuts were already applied", () => {
   plan.safety.cuts_applied = true;
   assert.ok(validateEditPlan(plan).some(error => error.includes("cortes já aplicados")));
 });
+
+test("validator rejects overlapping source segments", () => {
+  const plan = createReviewEditPlan(analysis, { aspect: "9:16", height: 1080 });
+  plan.segments = [
+    { id: "a", source_start_seconds: 0, source_end_seconds: 10, timeline_start_seconds: 0, duration_seconds: 10, decision: "keep" },
+    { id: "b", source_start_seconds: 9, source_end_seconds: 20, timeline_start_seconds: 10, duration_seconds: 11, decision: "keep" }
+  ];
+  assert.ok(validateEditPlan(plan).some(error => error.includes("sobrepõe")));
+});
+
+test("validator rejects duplicate segment identifiers", () => {
+  const plan = createReviewEditPlan(analysis, { aspect: "9:16", height: 1080 });
+  plan.segments = [
+    { id: "same", source_start_seconds: 0, source_end_seconds: 10, timeline_start_seconds: 0, duration_seconds: 10, decision: "keep" },
+    { id: "same", source_start_seconds: 10, source_end_seconds: 20, timeline_start_seconds: 10, duration_seconds: 10, decision: "keep" }
+  ];
+  assert.ok(validateEditPlan(plan).some(error => error.includes("identificador duplicado")));
+});
