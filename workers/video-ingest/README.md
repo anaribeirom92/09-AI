@@ -23,6 +23,7 @@ O 09 VIDEO AI é um agente interno da 09 Comunicação Integrada. A experiência
 - Validação do arquivo renderizado.
 - Diretório temporário removido ao final; o arquivo original nunca é sobrescrito.
 - Análise de silêncio e exportação de relatório JSON.
+- Detecção de mudanças visuais por quadro com FFmpeg `select(scene)`, exportando timestamps candidatos no relatório; são referências para revisão, não cortes automáticos nem compreensão semântica.
 - EDL conservador que mantém o vídeo inteiro e sinaliza pausas para revisão; não aplica cortes automaticamente.
 - Renderização de segmentos de um plano explicitamente aprovado: o motor concatena os trechos mantidos e sincroniza vídeo/áudio. Planos pendentes de revisão são recusados.
 - Leitura e validação de legendas SRT, incluindo vírgula/ponto nos milissegundos e texto multilinha.
@@ -71,7 +72,7 @@ O comando recusa planos com revisão pendente, segmentos inválidos ou duração
 Para analisar pausas sem renderizar:
 
 ```bash
-npm start -- --input ./bruto.mp4 --analyze-only --plan ./plano-edicao.json
+npm start -- --input ./bruto.mp4 --analyze-only --plan ./plano-edicao.json --scene-threshold 0.30
 ```
 
 A detecção usa FFmpeg `silencedetect`, por padrão em -35 dB por pelo menos 0,45 s. Pausas naturais exigem avaliação contextual. O EDL atual não é consumido pelo renderizador.
