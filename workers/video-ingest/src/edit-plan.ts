@@ -19,7 +19,7 @@ export type EditSegment = {
 
 export type EditPlan = {
   schema_version: 1;
-  status: "needs_review";
+  status: "needs_review" | "approved";
   source: { filename: string; duration_seconds: number };
   output: { aspect: "9:16" | "16:9" | "1:1"; height: 720 | 1080 | 1440 | 2160 };
   segments: EditSegment[];
@@ -27,7 +27,7 @@ export type EditPlan = {
   audio: { normalize: true; target_integrated_lufs: -16; true_peak_db: -1.5 };
   captions: { mode: "not_provided"; tracks: [] };
   overlays: [];
-  safety: { source_modified: false; cuts_applied: false; requires_human_review: true };
+  safety: { source_modified: false; cuts_applied: false; requires_human_review: boolean };
 };
 
 type AnalysisInput = {
@@ -78,25 +78,36 @@ export function createReviewEditPlan(analysis: AnalysisInput, output: OutputOpti
   };
 }
 
-/** Validate core timeline invariants before a future renderer is allowed to consume an edit plan. */
+/** Validate timeline invariants before a plan can be rendered. */
 export function validateEditPlan(plan: EditPlan): string[] {
   const errors: string[] = [];
   if (plan.schema_version !== 1) errors.push("Versão de schema não suportada.");
   if (plan.source.duration_seconds <= 0 || !Number.isFinite(plan.source.duration_seconds)) {
     errors.push("Duração da origem inválida.");
   }
-  if (plan.segments.length === 0) errors.push("O plano precisa conter ao menos um segmento.");
+  if (!plan.segments.length) errors.push("O plano precisa conter ao menos um segmento.");
+  let expectedTimelineStart = 0;
+  let previousSourceStart = -1;
   for (const [index, segment] of plan.segments.entries()) {
-    if (segment.source_start_seconds < 0) errors.push(`Segmento ${index + 1}: início negativo.`);
-    if (segment.source_end_seconds <= segment.source_start_seconds) errors.push(`Segmento ${index + 1}: intervalo inválido.`);
+    if (!Number.isFinite(segment.source_start_seconds) || segment.source_start_seconds < 0) errors.push(`Segmento ${index + 1}: início inválido.`);
+    if (!Number.isFinite(segment.source_end_seconds) || segment.source_end_seconds <= segment.source_start_seconds) errors.push(`Segmento ${index + 1}: intervalo inválido.`);
     if (segment.source_end_seconds > plan.source.duration_seconds) errors.push(`Segmento ${index + 1}: ultrapassa a duração original.`);
     if (Math.abs(segment.duration_seconds - (segment.source_end_seconds - segment.source_start_seconds)) > 0.01) {
       errors.push(`Segmento ${index + 1}: duração inconsistente.`);
     }
-    if (segment.timeline_start_seconds < 0) errors.push(`Segmento ${index + 1}: posição negativa na timeline.`);
+    if (Math.abs(segment.timeline_start_seconds - expectedTimelineStart) > 0.01) errors.push(`Segmento ${index + 1}: timeline precisa ser contínua.`);
+    if (segment.source_start_seconds < previousSourceStart) errors.push(`Segmento ${index + 1}: ordem da origem inválida.`);
+    expectedTimelineStart += segment.duration_seconds;
+    previousSourceStart = segment.source_start_seconds;
   }
   if (plan.safety.source_modified || plan.safety.cuts_applied) {
-    errors.push("Plano de revisão não pode declarar alterações no original ou cortes já aplicados.");
+    errors.push("Plano não pode declarar alterações no original ou cortes já aplicados.");
+  }
+  if (plan.status === "approved" && (plan.safety.requires_human_review || plan.review_items.length > 0)) {
+    errors.push("Plano aprovado não pode manter revisões humanas pendentes.");
+  }
+  if (plan.status === "needs_review" && !plan.safety.requires_human_review) {
+    errors.push("Plano pendente precisa exigir revisão humana.");
   }
   return errors;
 }
