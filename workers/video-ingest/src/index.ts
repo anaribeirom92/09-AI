@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { parseSilences, type SilenceInterval } from "./silence.js";
-import { createReviewEditPlan } from "./edit-plan.js";
+import { createReviewEditPlan, type ReviewItem } from "./edit-plan.js";
 
 type Aspect = "9:16" | "16:9" | "1:1";
 type Options = { input: string; output?: string; aspect: Aspect; height: 720 | 1080 | 1440 | 2160; analyzeOnly: boolean; silenceNoise: string; silenceDuration: number; report?: string; plan?: string };
@@ -81,7 +81,7 @@ async function main() {
     await writeFile(reportPath, JSON.stringify(analysis, null, 2) + "\n", "utf8");
     let planPath: string | undefined;
     if (options.plan) {
-      const plan = createReviewEditPlan(analysis, { aspect: options.aspect, height: options.height });
+      const plan = createReviewEditPlan({ ...analysis, edit_suggestions: analysis.edit_suggestions as ReviewItem[] }, { aspect: options.aspect, height: options.height });
       await mkdir(dirname(options.plan), { recursive: true });
       await writeFile(options.plan, JSON.stringify(plan, null, 2) + "\\n", "utf8");
       planPath = options.plan;
