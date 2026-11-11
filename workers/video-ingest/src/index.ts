@@ -79,6 +79,25 @@ function uploadTus(filePath: string, storagePath: string, contentType: string): 
 }
 
 
+async function recoverStaleJobs() {
+  const cutoff = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+  const { data: stale, error } = await supabase.from("video_jobs")
+    .select("id,project_id,attempt_count,max_attempts")
+    .eq("job_type", "ingest").eq("status", "running").lt("started_at", cutoff).limit(25);
+  if (error) throw error;
+  for (const job of stale ?? []) {
+    const exhausted = job.attempt_count >= job.max_attempts;
+    const { error: updateError } = await supabase.from("video_jobs").update({
+      status: exhausted ? "failed" : "queued",
+      started_at: null,
+      finished_at: exhausted ? new Date().toISOString() : null,
+      last_error: "Worker lease expirou; job recuperado automaticamente."
+    }).eq("id", job.id).eq("status", "running").lt("started_at", cutoff);
+    if (updateError) throw updateError;
+    if (exhausted) await supabase.from("video_projects").update({ status: "failed" }).eq("id", job.project_id);
+  }
+}
+
 async function claimJob(): Promise<VideoJob | null> {
   const { data: candidate, error: selectError } = await supabase
     .from("video_jobs")
@@ -123,6 +142,11 @@ async function failJob(job: VideoJob, error: unknown) {
 }
 
 async function processJob(job: VideoJob) {
+  const heartbeat = setInterval(() => {
+    void supabase.from("video_jobs").update({ started_at: new Date().toISOString() })
+      .eq("id", job.id).eq("status", "running")
+      .then(({ error }) => { if (error) console.error("[09-video-ingest] heartbeat failed", job.id, error); });
+  }, 60_000);
   const storagePath = job.payload.storage_path;
   const assetId = job.payload.asset_id;
   if (!storagePath || !assetId) throw new Error("Job sem asset_id ou storage_path.");
@@ -186,6 +210,7 @@ async function processJob(job: VideoJob) {
 
     await finishJob(job, { asset_id: assetId, ...baseMetadata, thumbnail_path: thumbnailPath, proxy_path: proxyPath });
   } finally {
+    clearInterval(heartbeat);
     await rm(workDir, { recursive: true, force: true });
   }
 }
@@ -194,6 +219,8 @@ async function loop() {
   console.log("[09-video-ingest] worker online; concurrency=" + MAX_CONCURRENT);
   const active = new Set<Promise<void>>();
   while (true) {
+    try { await recoverStaleJobs(); }
+    catch (error) { console.error("[09-video-ingest] stale job recovery failed", error); }
     while (active.size < MAX_CONCURRENT) {
       const job = await claimJob();
       if (!job) break;
