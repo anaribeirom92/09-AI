@@ -2,11 +2,11 @@ import { access, copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promise
 import { tmpdir } from "node:os";
 import { basename, dirname, resolve } from "node:path";
 import { spawn } from "node:child_process";
+import { parseSilences } from "./silence.js";
 
 type Aspect = "9:16" | "16:9" | "1:1";
 type Options = { input: string; output?: string; aspect: Aspect; height: 720 | 1080 | 1440 | 2160; analyzeOnly: boolean; silenceNoise: string; silenceDuration: number; report?: string };
 type ProcessResult = { stdout: string; stderr: string };
-type Silence = { start: number; end: number; duration: number };
 function parseArgs(args: string[]): Options {
   const values = new Map<string, string>();
   const flags = new Set(["analyze-only"]);
@@ -41,20 +41,6 @@ function run(command: string, args: string[]): Promise<ProcessResult> {
     child.on("close", code => code === 0 ? resolvePromise({ stdout, stderr }) : reject(new Error(stderr.slice(-5000) || command + " falhou (" + code + ")")));
   });
 }
-function parseSilences(log: string): Silence[] {
-  const starts: number[] = [];
-  const intervals: Silence[] = [];
-  for (const line of log.split(/\r?\n/)) {
-    const start = line.match(/silence_start:\s*([0-9.]+)/);
-    if (start) starts.push(Number(start[1]));
-    const end = line.match(/silence_end:\s*([0-9.]+)\s*\|\s*silence_duration:\s*([0-9.]+)/);
-    if (end) {
-      const from = starts.shift() ?? Math.max(0, Number(end[1]) - Number(end[2]));
-      intervals.push({ start: Number(from.toFixed(3)), end: Number(Number(end[1]).toFixed(3)), duration: Number(Number(end[2]).toFixed(3)) });
-    }
-  }
-  return intervals;
-}
 async function analyze(options: Options, probe: { format?: { duration?: string; format_name?: string }; streams?: Array<{ codec_type?: string; width?: number; height?: number; codec_name?: string; sample_rate?: string; channels?: number; side_data_list?: Array<{ rotation?: number }> }> }) {
   const video = probe.streams?.find(stream => stream.codec_type === "video");
   if (!video) throw new Error("O arquivo não contém uma faixa de vídeo.");
@@ -62,7 +48,7 @@ async function analyze(options: Options, probe: { format?: { duration?: string; 
   let silences: Silence[] = [];
   if (audioStream) {
     const result = await run("ffmpeg", ["-hide_banner", "-i", options.input, "-vn", "-af", `silencedetect=noise=${options.silenceNoise}:d=${options.silenceDuration}`, "-f", "null", "-"]);
-    silences = parseSilences(result.stderr);
+    silences = parseSilences(result.stderr, Number(probe.format?.duration ?? 0));
   }
   const duration = Number(probe.format?.duration ?? 0);
   const totalSilence = silences.reduce((sum, item) => sum + item.duration, 0);
@@ -81,6 +67,7 @@ async function main() {
   const options = parseArgs(process.argv.slice(2));
   await access(options.input);
   if (options.output && options.input === options.output) throw new Error("O arquivo de saída não pode sobrescrever o original.");
+  if (options.report && options.input === options.report) throw new Error("O relatório não pode sobrescrever o vídeo original.");
   const probeResult = await run("ffprobe", ["-v", "error", "-show_format", "-show_streams", "-of", "json", options.input]);
   const probe = JSON.parse(probeResult.stdout) as { format?: { duration?: string; format_name?: string }; streams?: Array<{ codec_type?: string; width?: number; height?: number; codec_name?: string; sample_rate?: string; channels?: number; side_data_list?: Array<{ rotation?: number }> }> };
   const analysis = await analyze(options, probe);
