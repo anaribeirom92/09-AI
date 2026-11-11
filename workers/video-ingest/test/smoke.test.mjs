@@ -66,3 +66,24 @@ test("renders video-only sources without inventing an audio track", async () => 
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("preserves a silent audio stream without applying loudness normalization", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "09-video-ai-silent-audio-"));
+  try {
+    const input = join(dir, "silent-audio-source.mp4");
+    const output = join(dir, "silent-audio-render.mp4");
+    run("ffmpeg", [
+      "-hide_banner", "-loglevel", "error", "-y",
+      "-f", "lavfi", "-i", "color=c=black:s=320x240:r=25:d=1",
+      "-f", "lavfi", "-i", "aevalsrc=0:d=1:s=44100",
+      "-shortest", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", input
+    ]);
+    const result = JSON.parse(run("node", [cli, "--input", input, "--output", output, "--aspect", "1:1", "--height", "720"]));
+    assert.equal(result.render.audio_normalized, false);
+    assert.equal(result.render.silent_audio_preserved_without_normalization, true);
+    const probe = JSON.parse(run("ffprobe", ["-v", "error", "-show_streams", "-of", "json", output]));
+    assert.ok(probe.streams.some(stream => stream.codec_type === "audio"));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
