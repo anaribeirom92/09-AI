@@ -7,7 +7,7 @@ Editor audiovisual premium de uso exclusivamente interno da equipe da 09 Comunic
 - **Aplicação:** Next.js App Router + TypeScript, dentro do repositório 09-AI e da área autenticada do dashboard.
 - **Identidade e acesso:** Supabase Auth existente; somente membros internos ativos da organização 09 acessam o módulo. Não existe papel, convite ou permissão para clientes.
 - **Dados:** Supabase Postgres, com tabelas próprias do módulo (video_projects, video_assets, video_jobs, video_edits, video_approvals) e RLS por organização. Não misturar jobs de vídeo com agent_runs.
-- **Arquivos:** Supabase Storage em buckets privados, upload/download por URL assinada; originais, proxies, áudio, thumbnails, overlays e exports separados por organização/projeto.
+- **Arquivos:** Supabase Storage em buckets privados, upload autenticado e retomável via TUS; downloads por URL assinada temporária quando necessário; originais, proxies, áudio, thumbnails, overlays e exports separados por organização/projeto.
 - **Orquestração:** fila durável no Postgres (ou pgmq quando validado) e worker independente. Não renderizar vídeo dentro de uma função Vercel.
 - **Motor audiovisual:** FFmpeg para ingestão, normalização, áudio, cortes e mux; Remotion para composições, legendas animadas, motion graphics e templates; render final executado no worker.
 - **IA:** camada provider-agnostic. Transcrição/alinhamento de fala, análise de cenas, detecção de pausas e planejamento de edição em JSON tipado. O plano de edição é revisável antes da renderização.
