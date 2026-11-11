@@ -1,6 +1,6 @@
 # 09 VIDEO AI — motor audiovisual
 
-O 09 VIDEO AI é um agente interno da 09 Comunicação Integrada. A experiência desejada é enviar o vídeo e o briefing diretamente ao ChatGPT, receber a análise/decisão editorial e obter o MP4 final na própria conversa, sem instalar ferramentas no computador da equipe.
+O 09 VIDEO AI é um agente interno da 09 Comunicação Integrada. O modo de execução atual é local: o Codex usa o computador da equipe para analisar e renderizar vídeos, sem serviços pagos. A integração de anexos diretamente ao ChatGPT ainda não está implementada.
 
 ## Arquitetura e estado real
 
@@ -11,7 +11,7 @@ O 09 VIDEO AI é um agente interno da 09 Comunicação Integrada. A experiência
 - **Entrega na conversa:** ainda não implementada. Para isso, o ambiente de execução precisa receber os bytes do vídeo, processá-los e devolver o arquivo resultante como anexo.
 - **Privacidade/custo:** não há envio para Supabase Storage, armazenamento permanente de vídeos, servidor contínuo ou API paga neste motor.
 
-**Importante:** este README não é um guia para Ana instalar Node.js, FFmpeg, Whisper ou qualquer outro programa. Os comandos abaixo documentam o motor para desenvolvimento e validação técnica no ambiente de engenharia, não o fluxo de uso final.
+**Importante:** a preparação local é opcional e restrita à pasta do repositório. O script baixa FFmpeg portátil gratuito para `.local-tools/` e instala dependências Node em `workers/video-ingest/node_modules/`; não instala programas globalmente. Node.js 22+ precisa já estar disponível. Nenhum modelo Whisper é baixado.
 
 ## Capacidades implementadas no motor de referência
 
@@ -33,12 +33,19 @@ O 09 VIDEO AI é um agente interno da 09 Comunicação Integrada. A experiência
 
 ## Desenvolvimento e testes
 
-O motor usa Node.js 22+, TypeScript e FFmpeg/FFprobe. No ambiente de engenharia que já disponha dessas dependências:
+O motor usa Node.js 22+, TypeScript e FFmpeg/FFprobe. No Windows, a preparação local única (gratuita) pode ser feita com:
 
-```bash
-npm install
-npm test
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/09-video-ai/setup-local.ps1
 ```
+
+Para renderizar usando os binários portáteis do projeto:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/09-video-ai/run-local.ps1 -InputVideo 'input/video.mp4' -OutputVideo 'output/video-final.mp4' -Aspect '9:16' -Height 1080
+```
+
+O setup requer Node.js 22+ já instalado/disponível no ambiente. As ferramentas baixadas e os arquivos renderizados ficam ignorados pelo Git.
 
 Para executar um render de referência:
 
