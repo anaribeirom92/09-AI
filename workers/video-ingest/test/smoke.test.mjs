@@ -25,7 +25,7 @@ test("full local pipeline analyzes, exports EDL and renders a synthetic video", 
     run("ffmpeg", [
       "-hide_banner", "-loglevel", "error", "-y",
       "-f", "lavfi", "-i", "color=c=blue:s=320x240:r=25:d=2",
-      "-f", "lavfi", "-i", "aevalsrc=0:d=2:s=44100",
+      "-f", "lavfi", "-i", "sine=frequency=440:duration=2:sample_rate=44100",
       "-shortest", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", input
     ]);
 
