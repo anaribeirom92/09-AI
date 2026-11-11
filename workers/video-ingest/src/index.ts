@@ -152,6 +152,9 @@ async function main() {
     const outputTemp = resolve(temp, "render.mp4");
     const graph = buildEditFilterGraph(segments, Boolean(audio));
     let filter = `${graph.filter_complex};[vout]${scaleCrop},fps=30[vscaled]`;
+    const expectedDuration = segments.reduce((sum, segment) => sum + segment.duration_seconds, 0);
+    if (options.fadeIn + options.fadeOut > expectedDuration) throw new Error("A soma dos fades não pode exceder a duração do vídeo editado.");
+    if (options.fadeIn > expectedDuration / 2 || options.fadeOut > expectedDuration / 2) throw new Error("Cada fade deve ter no máximo metade da duração do vídeo editado.");
     let captionCount = 0;
     if (options.captions) {
       const sourceCues = parseSrt(await readFile(options.captions, "utf8"), analysis.duration_seconds);
@@ -167,6 +170,10 @@ async function main() {
       }
     } else {
       filter += ";[vscaled]null[vfinal]";
+    }
+    if (options.fadeIn > 0 || options.fadeOut > 0) {
+      const videoFade = [options.fadeIn > 0 ? `fade=t=in:st=0:d=${options.fadeIn.toFixed(3)}` : "", options.fadeOut > 0 ? `fade=t=out:st=${(expectedDuration - options.fadeOut).toFixed(3)}:d=${options.fadeOut.toFixed(3)}` : ""].filter(Boolean).join(",");
+      filter += `;[vfinal]${videoFade}[vwithfade]`;
     }
     let audioMap = graph.audio_map;
     let audioNormalized = false;
@@ -199,13 +206,6 @@ async function main() {
     };
     const renderedVideo = renderedProbe.streams?.find(stream => stream.codec_type === "video");
     const renderedAudio = renderedProbe.streams?.find(stream => stream.codec_type === "audio");
-    const expectedDuration = segments.reduce((sum, segment) => sum + segment.duration_seconds, 0);
-    if (options.fadeIn + options.fadeOut > expectedDuration) throw new Error("A soma dos fades não pode exceder a duração do vídeo editado.");
-    if (options.fadeIn > expectedDuration / 2 || options.fadeOut > expectedDuration / 2) throw new Error("Cada fade deve ter no máximo metade da duração do vídeo editado.");
-    if (options.fadeIn > 0 || options.fadeOut > 0) {
-      const videoFade = [options.fadeIn > 0 ? `fade=t=in:st=0:d=${options.fadeIn.toFixed(3)}` : "", options.fadeOut > 0 ? `fade=t=out:st=${(expectedDuration - options.fadeOut).toFixed(3)}:d=${options.fadeOut.toFixed(3)}` : ""].filter(Boolean).join(",");
-      filter += `;[vfinal]${videoFade}[vwithfade]`;
-    }
     const renderedDuration = Number(renderedProbe.format?.duration ?? 0);
     if (!renderedVideo || renderedVideo.codec_name !== "h264") throw new Error("Validação final: faixa de vídeo H.264 ausente.");
     if (renderedVideo.width !== width || renderedVideo.height !== options.height) throw new Error("Validação final: dimensões do vídeo diferentes das solicitadas.");
