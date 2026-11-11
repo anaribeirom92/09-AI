@@ -58,6 +58,16 @@ test("full local pipeline analyzes, exports EDL and renders a synthetic video", 
     assert.equal(captionResult.render.captions_burned_in, 1);
     const captionProbe = JSON.parse(run("ffprobe", ["-v", "error", "-show_streams", "-of", "json", captionedOutput]));
     assert.ok(captionProbe.streams.some(stream => stream.codec_type === "video"));
+    const titlesPath = join(dir, "titles.json");
+    const titledOutput = join(dir, "titled-render.mp4");
+    await import("node:fs/promises").then(({ writeFile }) => writeFile(titlesPath, JSON.stringify([
+      { text: "09 Comunicação\\nIdeias em movimento", start_seconds: 0.2, end_seconds: 1.7, position: "center", style: "title", fade_in_seconds: 0.2, fade_out_seconds: 0.2 },
+      { text: "Ana Paula | Direção", start_seconds: 0.5, end_seconds: 1.8, position: "bottom", style: "lower-third" }
+    ]), "utf8"));
+    const titleResult = JSON.parse(run("node", [cli, "--input", input, "--output", titledOutput, "--titles", titlesPath, "--aspect", "16:9", "--height", "720"]));
+    assert.equal(titleResult.render.titles_burned_in, 2);
+    const titleProbe = JSON.parse(run("ffprobe", ["-v", "error", "-show_streams", "-of", "json", titledOutput]));
+    assert.ok(titleProbe.streams.some(stream => stream.codec_type === "video"));
 
 
     const approvedPlanPath = join(dir, "approved-plan.json");
