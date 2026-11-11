@@ -25,7 +25,7 @@ O 09 VIDEO AI é um agente interno da 09 Comunicação Integrada. A experiência
 - Análise de silêncio e exportação de relatório JSON.
 - EDL conservador que mantém o vídeo inteiro e sinaliza pausas para revisão; não aplica cortes automaticamente.
 - Renderização de segmentos de um plano explicitamente aprovado: o motor concatena os trechos mantidos e sincroniza vídeo/áudio. Planos pendentes de revisão são recusados.
-- Leitura e validação de legendas SRT, incluindo vírgula/ponto nos milissegundos e texto multilinha.
+- Leitura e validação de legendas SRT, incluindo vírgula/ponto nos milissegundos e texto multilinha.\n- Queima de legendas no vídeo com estilo legível; ao aplicar cortes aprovados, os tempos são recortados e reposicionados na timeline final.
 
 ## Desenvolvimento e testes
 
@@ -42,7 +42,7 @@ Para executar um render de referência:
 npm start -- --input ./bruto.mp4 --output ./final.mp4 --aspect 9:16 --height 1080
 ```
 
-Para renderizar um plano aprovado, forneça um JSON de edição com `status: "approved"`, `safety.requires_human_review: false`, `review_items: []` e segmentos `keep` em timeline contínua. A aprovação é explícita e não é feita automaticamente pelo motor:
+Para renderizar com legendas SRT já transcritas/revisadas, use `--captions`:\n\n```bash\nnpm start -- --input ./bruto.mp4 --output ./final-com-legendas.mp4 --captions ./legendas.srt --aspect 9:16 --height 1080\n```\n\nAs legendas são incorporadas à imagem (burn-in), com estilo padrão. Quando combinado com um plano de cortes aprovado, os tempos são ajustados para acompanhar a nova timeline.\n\nPara renderizar um plano aprovado, forneça um JSON de edição com `status: "approved"`, `safety.requires_human_review: false`, `review_items: []` e segmentos `keep` em timeline contínua. A aprovação é explícita e não é feita automaticamente pelo motor:
 
 ```bash
 npm start -- --input ./bruto.mp4 --output ./final.mp4 --edit-plan ./plano-aprovado.json --aspect 9:16 --height 1080
