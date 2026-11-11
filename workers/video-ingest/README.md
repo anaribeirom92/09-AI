@@ -44,6 +44,10 @@ Cada intervalo é registrado como sugestão de revisão, inclusive silêncio que
 
 O módulo `src/edit-plan.ts` define um formato estruturado para decisões de edição. Nesta etapa, ele gera um plano conservador: mantém 100% do vídeo original, organiza pausas como itens para revisão humana e registra parâmetros de áudio e formato de saída. A validação verifica duração, limites dos segmentos e invariantes de segurança. Ainda não aplica cortes nem renderiza a partir do EDL.
 
+## Legendas SRT (base local)
+
+O módulo `src/captions.ts` lê arquivos SRT sem dependências externas, aceita milissegundos com vírgula ou ponto, preserva legendas em múltiplas linhas e valida ordem cronológica, timestamps e duração opcional do vídeo. Nesta etapa ele apenas interpreta e valida legendas fornecidas; ainda não transcreve fala nem grava legendas no vídeo.
+
 ## Testes
 
 ```bash
