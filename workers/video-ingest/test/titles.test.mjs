@@ -28,5 +28,5 @@ test("rejects unsafe oversized title payloads", () => {
 test("escapes ASS control characters in supplied title text", () => {
   const [title] = validateTitles([{ text: "{\\an7}\\override", start_seconds: 0, end_seconds: 1 }], 2);
   const ass = serializeAssTitles([title], 1080, 1920);
-  assert.ok(ass.includes(String.raw`\\{\\\\an7\\}\\\\override`));
+  assert.ok(ass.includes(String.raw`\{\\an7\}\\override`));
 });
