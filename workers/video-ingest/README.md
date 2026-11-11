@@ -33,12 +33,12 @@ O motor:
 Para gerar um relatório JSON sem renderizar nem alterar o vídeo:
 
 ```bash
-npm start -- --input ./bruto.mp4 --analyze-only
+npm start -- --input ./bruto.mp4 --analyze-only --plan ./plano-edicao.json
 ```
 
 O relatório é salvo ao lado do original com o sufixo `.09-video-analysis.json`. Também é possível escolher o destino com `--report ./analise.json`. A detecção usa FFmpeg `silencedetect`, com padrão de -35 dB por pelo menos 0,45 s. Ajustes opcionais: `--silence-noise -32dB` e `--silence-duration 0.6`.
 
-Cada intervalo é registrado como sugestão de revisão, inclusive silêncio que chega ao fim do arquivo. Pausas naturais fazem parte da fala e precisam ser avaliadas no contexto.
+Cada intervalo é registrado como sugestão de revisão, inclusive silêncio que chega ao fim do arquivo. Pausas naturais fazem parte da fala e precisam ser avaliadas no contexto. O argumento opcional `--plan ./plano-edicao.json` também exporta um EDL conservador: mantém o vídeo inteiro e lista as pausas para revisão, sem aplicar cortes.
 
 ## Plano de edição (EDL) — primeira versão
 
