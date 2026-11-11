@@ -78,7 +78,9 @@ async function main() {
   const options = parseArgs(process.argv.slice(2));
   await access(options.input);
   if (options.output && options.input === options.output) throw new Error("O arquivo de saída não pode sobrescrever o original.");
-  if (options.transcribe && !options.output) throw new Error("A transcrição exige --output ./legendas.srt.");\n  if (options.captions && options.transcribe) throw new Error("--captions não pode ser combinado com --transcribe.");\n  if (options.captions) await access(options.captions);
+  if (options.transcribe && !options.output) throw new Error("A transcrição exige --output ./legendas.srt.");
+  if (options.captions && options.transcribe) throw new Error("--captions não pode ser combinado com --transcribe.");
+  if (options.captions) await access(options.captions);
   if (options.transcribe && options.output && !options.output.toLowerCase().endsWith(".srt")) throw new Error("A saída da transcrição precisa ter extensão .srt.");
   if (options.transcribe && options.whisperModel) await access(options.whisperModel);
   if (options.report && options.input === options.report) throw new Error("O relatório não pode sobrescrever o vídeo original.");
@@ -146,7 +148,8 @@ async function main() {
     const scaleCrop = `scale=${width}:${options.height}:force_original_aspect_ratio=increase,crop=${width}:${options.height},setsar=1`;
     const outputTemp = resolve(temp, "render.mp4");
     const graph = buildEditFilterGraph(segments, Boolean(audio));
-    let filter = `${graph.filter_complex};[vout]${scaleCrop},fps=30[vscaled]`;\n    let captionCount = 0;\n    if (options.captions) {\n      const sourceCues = parseSrt(await readFile(options.captions, "utf8"), analysis.duration_seconds);\n      const timelineCues = mapCaptionsToTimeline(sourceCues, segments);\n      captionCount = timelineCues.length;\n      if (timelineCues.length) {\n        const subtitlePath = resolve(temp, "captions.srt");\n        await writeFile(subtitlePath, serializeSrt(timelineCues), "utf8");\n        const escapedPath = subtitlePath.replace(/\\\\/g, "\\\\\\\\").replace(/:/g, "\\\\:").replace(/\'/g, "\\\\\'");\n        filter += `;[vscaled]subtitles=filename=\'${escapedPath}\':force_style=\'FontName=Arial,FontSize=18,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=1,Alignment=2,MarginV=48\'[vfinal]`;\n      } else {\n        filter += ";[vscaled]null[vfinal]";\n      }\n    } else {\n      filter += ";[vscaled]null[vfinal]";\n    }
+    let filter = `${graph.filter_complex};[vout]${scaleCrop},fps=30[vscaled]`;
+    let captionCount = 0;\n    if (options.captions) {\n      const sourceCues = parseSrt(await readFile(options.captions, "utf8"), analysis.duration_seconds);\n      const timelineCues = mapCaptionsToTimeline(sourceCues, segments);\n      captionCount = timelineCues.length;\n      if (timelineCues.length) {\n        const subtitlePath = resolve(temp, "captions.srt");\n        await writeFile(subtitlePath, serializeSrt(timelineCues), "utf8");\n        const escapedPath = subtitlePath.replace(/\\\\/g, "\\\\\\\\").replace(/:/g, "\\\\:").replace(/\'/g, "\\\\\'");\n        filter += `;[vscaled]subtitles=filename=\'${escapedPath}\':force_style=\'FontName=Arial,FontSize=18,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=1,Alignment=2,MarginV=48\'[vfinal]`;\n      } else {\n        filter += ";[vscaled]null[vfinal]";\n      }\n    } else {\n      filter += ";[vscaled]null[vfinal]";\n    }
     let audioMap = graph.audio_map;
     let audioNormalized = false;
     if (audio) {
