@@ -3,16 +3,17 @@ import { tmpdir } from "node:os";
 import { basename, dirname, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { parseSilences, type SilenceInterval } from "./silence.js";
-import { createReviewEditPlan, type ReviewItem } from "./edit-plan.js";
+import { createReviewEditPlan, validateEditPlan, type EditPlan, type EditSegment, type ReviewItem } from "./edit-plan.js";
+import { buildEditFilterGraph } from "./render-plan.js";
 import { parseSrt } from "./captions.js";
 
 type Aspect = "9:16" | "16:9" | "1:1";
-type Options = { input: string; output?: string; aspect: Aspect; height: 720 | 1080 | 1440 | 2160; analyzeOnly: boolean; transcribe: boolean; whisperBin: string; whisperModel?: string; language: string; silenceNoise: string; silenceDuration: number; report?: string; plan?: string };
+type Options = { input: string; output?: string; aspect: Aspect; height: 720 | 1080 | 1440 | 2160; analyzeOnly: boolean; transcribe: boolean; whisperBin: string; whisperModel?: string; language: string; silenceNoise: string; silenceDuration: number; report?: string; plan?: string; editPlan?: string };
 type ProcessResult = { stdout: string; stderr: string };
 function parseArgs(args: string[]): Options {
   const values = new Map<string, string>();
   const flags = new Set(["analyze-only", "transcribe"]);
-  const valueOptions = new Set(["input", "output", "aspect", "height", "silence-noise", "silence-duration", "report", "plan", "whisper-model", "whisper-bin", "language"]);
+  const valueOptions = new Set(["input", "output", "aspect", "height", "silence-noise", "silence-duration", "report", "plan", "whisper-model", "whisper-bin", "language", "edit-plan"]);
   for (let i = 0; i < args.length; i++) {
     const key = args[i];
     if (key.startsWith("--")) {
@@ -39,7 +40,7 @@ function parseArgs(args: string[]): Options {
   if (!["9:16", "16:9", "1:1"].includes(aspect)) throw new Error("Proporção inválida.");
   if (![720, 1080, 1440, 2160].includes(height)) throw new Error("Resolução inválida.");
   if (!Number.isFinite(silenceDuration) || silenceDuration < 0.1 || silenceDuration > 10) throw new Error("Duração mínima de silêncio deve estar entre 0.1 e 10 segundos.");
-  return { input: resolve(input), output: output ? resolve(output) : undefined, aspect, height, analyzeOnly, transcribe, whisperBin: values.get("whisper-bin") ?? "whisper-cli", whisperModel: whisperModel ? resolve(whisperModel) : undefined, language: values.get("language") ?? "pt", silenceNoise, silenceDuration, report: values.get("report") ? resolve(values.get("report")!) : undefined, plan: values.get("plan") ? resolve(values.get("plan")!) : undefined };
+  return { input: resolve(input), output: output ? resolve(output) : undefined, aspect, height, analyzeOnly, transcribe, whisperBin: values.get("whisper-bin") ?? "whisper-cli", whisperModel: whisperModel ? resolve(whisperModel) : undefined, language: values.get("language") ?? "pt", silenceNoise, silenceDuration, report: values.get("report") ? resolve(values.get("report")!) : undefined, plan: values.get("plan") ? resolve(values.get("plan")!) : undefined, editPlan: values.get("edit-plan") ? resolve(values.get("edit-plan")!) : undefined };
 }
 function run(command: string, args: string[]): Promise<ProcessResult> {
   return new Promise((resolvePromise, reject) => {
@@ -82,6 +83,8 @@ async function main() {
   if (options.transcribe && options.whisperModel) await access(options.whisperModel);
   if (options.report && options.input === options.report) throw new Error("O relatório não pode sobrescrever o vídeo original.");
   if (options.plan && !options.analyzeOnly) throw new Error("A geração de plano exige --analyze-only.");
+  if (options.editPlan && options.analyzeOnly) throw new Error("--edit-plan só pode ser usado durante a renderização.");
+  if (options.editPlan && (options.editPlan === options.input || options.editPlan === options.output)) throw new Error("O plano de edição precisa ter caminho exclusivo.");
   if (options.plan && options.input === options.plan) throw new Error("O plano não pode sobrescrever o vídeo original.");
   if (options.plan && options.report && options.plan === options.report) throw new Error("Relatório e plano precisam de caminhos diferentes.");
   if (options.output && (options.output === options.report || options.output === options.plan)) throw new Error("Vídeo de saída, relatório e plano precisam de caminhos diferentes.");
@@ -125,16 +128,27 @@ async function main() {
   const video = probe.streams?.find(stream => stream.codec_type === "video");
   if (!video || !options.output) throw new Error("Não foi possível preparar a renderização.");
   await mkdir(dirname(options.output), { recursive: true });
+  const audio = probe.streams?.some(stream => stream.codec_type === "audio");
+  let segments: EditSegment[] = [{ id: "full-source", source_start_seconds: 0, source_end_seconds: analysis.duration_seconds, timeline_start_seconds: 0, duration_seconds: analysis.duration_seconds, decision: "keep" }];
+  if (options.editPlan) {
+    const suppliedPlan = JSON.parse(await readFile(options.editPlan, "utf8")) as EditPlan;
+    const errors = validateEditPlan(suppliedPlan);
+    if (errors.length) throw new Error("Plano de edição inválido: " + errors.join(" "));
+    if (suppliedPlan.status !== "approved" || suppliedPlan.safety.requires_human_review) throw new Error("O plano ainda não foi aprovado. Revise os segmentos e marque status como approved e requires_human_review como false.");
+    if (Math.abs(suppliedPlan.source.duration_seconds - analysis.duration_seconds) > 0.1) throw new Error("A duração do plano não corresponde ao vídeo enviado.");
+    segments = suppliedPlan.segments;
+  }
   const temp = await mkdtemp(resolve(tmpdir(), "09-video-ai-"));
   try {
-    const audio = probe.streams?.some(stream => stream.codec_type === "audio");
     const [w, h] = options.aspect === "9:16" ? [9, 16] : options.aspect === "16:9" ? [16, 9] : [1, 1];
     const width = Math.round(options.height * w / h / 2) * 2;
     const scaleCrop = `scale=${width}:${options.height}:force_original_aspect_ratio=increase,crop=${width}:${options.height},setsar=1`;
     const outputTemp = resolve(temp, "render.mp4");
-    const args = ["-hide_banner", "-y", "-i", options.input, "-map", "0:v:0"];
-    if (audio) args.push("-map", "0:a:0?");
-    args.push("-vf", `${scaleCrop},fps=30`, "-c:v", "libx264", "-preset", "medium", "-crf", "20", "-pix_fmt", "yuv420p");
+    const graph = buildEditFilterGraph(segments, Boolean(audio));
+    const filter = `${graph.filter_complex};[vout]${scaleCrop},fps=30[vfinal]`;
+    const args = ["-hide_banner", "-y", "-i", options.input, "-filter_complex", filter, "-map", "[vfinal]"];
+    if (graph.audio_map) args.push("-map", graph.audio_map);
+    args.push("-c:v", "libx264", "-preset", "medium", "-crf", "20", "-pix_fmt", "yuv420p");
     let audioNormalized = false;
     if (audio) {
       const volume = await run("ffmpeg", ["-hide_banner", "-i", options.input, "-vn", "-af", "volumedetect", "-f", "null", "-"]);
@@ -151,7 +165,7 @@ async function main() {
     await run("ffmpeg", args);
     await run("ffmpeg", ["-v", "error", "-i", outputTemp, "-f", "null", "-"]);
     await copyFile(outputTemp, options.output);
-    console.log(JSON.stringify({ ok: true, input: basename(options.input), output: options.output, duration_seconds: analysis.duration_seconds, detected_silences_for_review: analysis.audio_analysis.detected_silence_count, source: analysis.source, render: { aspect: options.aspect, width, height: options.height, video_codec: "h264", audio_normalized: audioNormalized, silent_audio_preserved_without_normalization: audio && !audioNormalized } }, null, 2));
+    console.log(JSON.stringify({ ok: true, input: basename(options.input), output: options.output, duration_seconds: analysis.duration_seconds, detected_silences_for_review: analysis.audio_analysis.detected_silence_count, source: analysis.source, render: { aspect: options.aspect, width, height: options.height, video_codec: "h264", audio_normalized: audioNormalized, silent_audio_preserved_without_normalization: audio && !audioNormalized, edit_segments_rendered: segments.length, edited_duration_seconds: segments.reduce((sum, segment) => sum + segment.duration_seconds, 0) } }, null, 2));
   } finally { await rm(temp, { recursive: true, force: true }); }
 }
 main().catch(error => { console.error("[09 VIDEO AI]", error instanceof Error ? error.message : error); process.exitCode = 1; });
