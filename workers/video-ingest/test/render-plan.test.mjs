@@ -9,7 +9,7 @@ const segments = [
 
 test("builds synchronized video/audio concat graph for approved cuts", () => {
   const graph = buildEditFilterGraph(segments, true);
-  assert.match(graph.filter_complex, /trim=start=0\.000:end=4\.250/);
+  assert.match(graph.filter_complex, /split=2\[vsrc0\]\[vsrc1\]/);\n  assert.match(graph.filter_complex, /asplit=2\[asrc0\]\[asrc1\]/);\n  assert.match(graph.filter_complex, /trim=start=0\.000:end=4\.250/);
   assert.match(graph.filter_complex, /atrim=start=7\.000:end=10\.000/);
   assert.match(graph.filter_complex, /concat=n=2:v=1:a=1\[vout\]\[aout\]/);
   assert.equal(graph.video_map, "[vout]");
