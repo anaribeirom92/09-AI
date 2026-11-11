@@ -113,7 +113,8 @@ export default function VideoAIStudio({ organizationId, initialProjects }: Props
     try {
       setProgress("Validando sessão e criando projeto…");
       const {data:authData,error:authError} = await supabase.auth.getUser();
-      if (authError || !authData.user) throw new Error("Sua sessão expirou. Entre novamente.");
+      const {data:sessionData,error:sessionError} = await supabase.auth.getSession();
+      if (authError || sessionError || !authData.user || !sessionData.session?.access_token) throw new Error("Sua sessão expirou. Entre novamente.");
       const {data:project,error:projectError} = await supabase.from("video_projects").insert({
         organization_id:organizationId,name:name.trim(),description:brief.trim()||null,
         creative_brief:brief.trim()||null,aspect_ratio:aspectRatio,resolution,created_by:authData.user.id
@@ -123,10 +124,9 @@ export default function VideoAIStudio({ organizationId, initialProjects }: Props
       assetId = crypto.randomUUID();
       const path = project.id + "/" + assetId + "/" + safeFilename(file.name);
       setProgress("Enviando arquivo original (" + formatSize(file.size) + ")…");
-      const {error:uploadError} = await supabase.storage.from("09-video-ai").upload(path,file,{
-        cacheControl:"3600",upsert:false,contentType:file.type||undefined
+      await uploadResumable(file,path,sessionData.session.access_token,(percent) => {
+        setProgress("Enviando arquivo original (" + formatSize(file.size) + ")… " + percent + "%");
       });
-      if (uploadError) throw uploadError;
       uploadedPath = path;
       setProgress("Registrando mídia e preparando a fila…");
       const kind = file.type.startsWith("audio/") ? "audio" : file.type.startsWith("image/") ? "broll" : "original";
@@ -148,8 +148,9 @@ export default function VideoAIStudio({ organizationId, initialProjects }: Props
       setShowForm(false); setProgress("Projeto criado e mídia adicionada à fila de ingestão.");
       router.refresh();
     } catch (caught) {
-      if (assetId && createdProjectId) await supabase.from("video_assets").delete().eq("id",assetId);
+      if (assetId) await supabase.from("video_assets").delete().eq("id",assetId);
       if (uploadedPath) await supabase.storage.from("09-video-ai").remove([uploadedPath]);
+      if (createdProjectId) await supabase.from("video_projects").update({status:"failed"}).eq("id",createdProjectId);
       setError(caught instanceof Error ? caught.message : "Não foi possível concluir o envio.");
       setProgress("");
     } finally { setBusy(false); }
