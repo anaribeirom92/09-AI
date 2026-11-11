@@ -5,15 +5,15 @@ import { spawn } from "node:child_process";
 import { parseSilences, type SilenceInterval } from "./silence.js";
 import { createReviewEditPlan, validateEditPlan, type EditPlan, type EditSegment, type ReviewItem } from "./edit-plan.js";
 import { buildEditFilterGraph } from "./render-plan.js";
-import { parseSrt } from "./captions.js";
+import { mapCaptionsToTimeline, parseSrt, serializeSrt } from "./captions.js";
 
 type Aspect = "9:16" | "16:9" | "1:1";
-type Options = { input: string; output?: string; aspect: Aspect; height: 720 | 1080 | 1440 | 2160; analyzeOnly: boolean; transcribe: boolean; whisperBin: string; whisperModel?: string; language: string; silenceNoise: string; silenceDuration: number; report?: string; plan?: string; editPlan?: string };
+type Options = { input: string; output?: string; aspect: Aspect; height: 720 | 1080 | 1440 | 2160; analyzeOnly: boolean; transcribe: boolean; whisperBin: string; whisperModel?: string; language: string; silenceNoise: string; silenceDuration: number; report?: string; plan?: string; editPlan?: string; captions?: string };
 type ProcessResult = { stdout: string; stderr: string };
 function parseArgs(args: string[]): Options {
   const values = new Map<string, string>();
   const flags = new Set(["analyze-only", "transcribe"]);
-  const valueOptions = new Set(["input", "output", "aspect", "height", "silence-noise", "silence-duration", "report", "plan", "whisper-model", "whisper-bin", "language", "edit-plan"]);
+  const valueOptions = new Set(["input", "output", "aspect", "height", "silence-noise", "silence-duration", "report", "plan", "whisper-model", "whisper-bin", "language", "edit-plan", "captions"]);
   for (let i = 0; i < args.length; i++) {
     const key = args[i];
     if (key.startsWith("--")) {
@@ -40,7 +40,7 @@ function parseArgs(args: string[]): Options {
   if (!["9:16", "16:9", "1:1"].includes(aspect)) throw new Error("Proporção inválida.");
   if (![720, 1080, 1440, 2160].includes(height)) throw new Error("Resolução inválida.");
   if (!Number.isFinite(silenceDuration) || silenceDuration < 0.1 || silenceDuration > 10) throw new Error("Duração mínima de silêncio deve estar entre 0.1 e 10 segundos.");
-  return { input: resolve(input), output: output ? resolve(output) : undefined, aspect, height, analyzeOnly, transcribe, whisperBin: values.get("whisper-bin") ?? "whisper-cli", whisperModel: whisperModel ? resolve(whisperModel) : undefined, language: values.get("language") ?? "pt", silenceNoise, silenceDuration, report: values.get("report") ? resolve(values.get("report")!) : undefined, plan: values.get("plan") ? resolve(values.get("plan")!) : undefined, editPlan: values.get("edit-plan") ? resolve(values.get("edit-plan")!) : undefined };
+  return { input: resolve(input), output: output ? resolve(output) : undefined, aspect, height, analyzeOnly, transcribe, whisperBin: values.get("whisper-bin") ?? "whisper-cli", whisperModel: whisperModel ? resolve(whisperModel) : undefined, language: values.get("language") ?? "pt", silenceNoise, silenceDuration, report: values.get("report") ? resolve(values.get("report")!) : undefined, plan: values.get("plan") ? resolve(values.get("plan")!) : undefined, editPlan: values.get("edit-plan") ? resolve(values.get("edit-plan")!) : undefined, captions: values.get("captions") ? resolve(values.get("captions")!) : undefined };
 }
 function run(command: string, args: string[]): Promise<ProcessResult> {
   return new Promise((resolvePromise, reject) => {
@@ -78,7 +78,7 @@ async function main() {
   const options = parseArgs(process.argv.slice(2));
   await access(options.input);
   if (options.output && options.input === options.output) throw new Error("O arquivo de saída não pode sobrescrever o original.");
-  if (options.transcribe && !options.output) throw new Error("A transcrição exige --output ./legendas.srt.");
+  if (options.transcribe && !options.output) throw new Error("A transcrição exige --output ./legendas.srt.");\n  if (options.captions && options.transcribe) throw new Error("--captions não pode ser combinado com --transcribe.");\n  if (options.captions) await access(options.captions);
   if (options.transcribe && options.output && !options.output.toLowerCase().endsWith(".srt")) throw new Error("A saída da transcrição precisa ter extensão .srt.");
   if (options.transcribe && options.whisperModel) await access(options.whisperModel);
   if (options.report && options.input === options.report) throw new Error("O relatório não pode sobrescrever o vídeo original.");
@@ -146,7 +146,7 @@ async function main() {
     const scaleCrop = `scale=${width}:${options.height}:force_original_aspect_ratio=increase,crop=${width}:${options.height},setsar=1`;
     const outputTemp = resolve(temp, "render.mp4");
     const graph = buildEditFilterGraph(segments, Boolean(audio));
-    let filter = `${graph.filter_complex};[vout]${scaleCrop},fps=30[vfinal]`;
+    let filter = `${graph.filter_complex};[vout]${scaleCrop},fps=30[vscaled]`;\n    let captionCount = 0;\n    if (options.captions) {\n      const sourceCues = parseSrt(await readFile(options.captions, "utf8"), analysis.duration_seconds);\n      const timelineCues = mapCaptionsToTimeline(sourceCues, segments);\n      captionCount = timelineCues.length;\n      if (timelineCues.length) {\n        const subtitlePath = resolve(temp, "captions.srt");\n        await writeFile(subtitlePath, serializeSrt(timelineCues), "utf8");\n        const escapedPath = subtitlePath.replace(/\\\\/g, "\\\\\\\\").replace(/:/g, "\\\\:").replace(/\'/g, "\\\\\'");\n        filter += `;[vscaled]subtitles=filename=\'${escapedPath}\':force_style=\'FontName=Arial,FontSize=18,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=1,Alignment=2,MarginV=48\'[vfinal]`;\n      } else {\n        filter += ";[vscaled]null[vfinal]";\n      }\n    } else {\n      filter += ";[vscaled]null[vfinal]";\n    }
     let audioMap = graph.audio_map;
     let audioNormalized = false;
     if (audio) {
@@ -182,7 +182,7 @@ async function main() {
       throw new Error("Validação final: duração renderizada incompatível com o plano de edição.");
     }
     await copyFile(outputTemp, options.output);
-    console.log(JSON.stringify({ ok: true, input: basename(options.input), output: options.output, duration_seconds: analysis.duration_seconds, detected_silences_for_review: analysis.audio_analysis.detected_silence_count, source: analysis.source, render: { aspect: options.aspect, width, height: options.height, video_codec: renderedVideo.codec_name, audio_codec: renderedAudio?.codec_name ?? null, duration_seconds: renderedDuration, audio_normalized: audioNormalized, silent_audio_preserved_without_normalization: audio && !audioNormalized, edit_segments_rendered: segments.length, edited_duration_seconds: expectedDuration, validation: "passed" } }, null, 2));
+    console.log(JSON.stringify({ ok: true, input: basename(options.input), output: options.output, duration_seconds: analysis.duration_seconds, detected_silences_for_review: analysis.audio_analysis.detected_silence_count, source: analysis.source, render: { aspect: options.aspect, width, height: options.height, video_codec: renderedVideo.codec_name, audio_codec: renderedAudio?.codec_name ?? null, duration_seconds: renderedDuration, audio_normalized: audioNormalized, silent_audio_preserved_without_normalization: audio && !audioNormalized, edit_segments_rendered: segments.length, edited_duration_seconds: expectedDuration, captions_burned_in: captionCount, validation: "passed" } }, null, 2));
   } finally { await rm(temp, { recursive: true, force: true }); }
 }
 main().catch(error => { console.error("[09 VIDEO AI]", error instanceof Error ? error.message : error); process.exitCode = 1; });
