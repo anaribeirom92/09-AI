@@ -27,6 +27,7 @@ O 09 VIDEO AI é um agente interno da 09 Comunicação Integrada. A experiência
 - Renderização de segmentos de um plano explicitamente aprovado: o motor concatena os trechos mantidos e sincroniza vídeo/áudio. Planos pendentes de revisão são recusados.
 - Leitura e validação de legendas SRT, incluindo vírgula/ponto nos milissegundos e texto multilinha.\n- Queima de legendas no vídeo com estilo legível; ao aplicar cortes aprovados, os tempos são recortados e reposicionados na timeline final.
 - Fade-in e fade-out sincronizados entre imagem e áudio, com validação para não exceder a duração do vídeo.
+- Títulos animados com fade, posicionamento superior/central/inferior e lower-third, renderizados como camada ASS no vídeo; tempos definidos na timeline final editada.
 
 ## Desenvolvimento e testes
 
@@ -43,7 +44,7 @@ Para executar um render de referência:
 npm start -- --input ./bruto.mp4 --output ./final.mp4 --aspect 9:16 --height 1080
 ```
 
-Para renderizar com legendas SRT já transcritas/revisadas, use `--captions`. Fades opcionais podem ser configurados com `--fade-in` e `--fade-out` (segundos), aplicados à imagem e ao áudio:\n\n```bash\nnpm start -- --input ./bruto.mp4 --output ./final-com-legendas.mp4 --captions ./legendas.srt --fade-in 0.3 --fade-out 0.5 --aspect 9:16 --height 1080\n```\n\nAs legendas são incorporadas à imagem (burn-in), com estilo padrão. Quando combinado com um plano de cortes aprovado, os tempos são ajustados para acompanhar a nova timeline.\n\nPara renderizar um plano aprovado, forneça um JSON de edição com `status: "approved"`, `safety.requires_human_review: false`, `review_items: []` e segmentos `keep` em timeline contínua. A aprovação é explícita e não é feita automaticamente pelo motor:
+Para renderizar com legendas SRT já transcritas/revisadas, use `--captions`. Fades opcionais podem ser configurados com `--fade-in` e `--fade-out` (segundos), aplicados à imagem e ao áudio. Títulos podem ser fornecidos por um JSON com `--titles`:\n\n```bash\nnpm start -- --input ./bruto.mp4 --output ./final-com-legendas.mp4 --captions ./legendas.srt --titles ./titulos.json --fade-in 0.3 --fade-out 0.5 --aspect 9:16 --height 1080\n```\n\nAs legendas são incorporadas à imagem (burn-in), com estilo padrão. Quando combinado com um plano de cortes aprovado, os tempos são ajustados para acompanhar a nova timeline. Os títulos usam tempos da timeline final e aceitam até 30 itens, texto de até 180 caracteres, posição `top`, `center` ou `bottom`, estilo `title` ou `lower-third`, e fades de entrada/saída. Exemplo de `titulos.json`:\n\n```json\n[\n  { "text": "Uma ideia que transforma", "start_seconds": 0.5, "end_seconds": 3.5, "position": "center", "style": "title", "fade_in_seconds": 0.3, "fade_out_seconds": 0.3 },\n  { "text": "09 Comunicação", "start_seconds": 1, "end_seconds": 4, "position": "bottom", "style": "lower-third" }\n]\n```\n\nPara renderizar um plano aprovado, forneça um JSON de edição com `status: "approved"`, `safety.requires_human_review: false`, `review_items: []` e segmentos `keep` em timeline contínua. A aprovação é explícita e não é feita automaticamente pelo motor:
 
 ```bash
 npm start -- --input ./bruto.mp4 --output ./final.mp4 --edit-plan ./plano-aprovado.json --aspect 9:16 --height 1080
