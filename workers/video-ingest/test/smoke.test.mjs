@@ -43,6 +43,30 @@ test("full local pipeline analyzes, exports EDL and renders a synthetic video", 
     assert.equal(video.width, 406);
     assert.equal(video.height, 720);
     assert.ok(probe.streams.some(stream => stream.codec_type === "audio"));
+
+    const approvedPlanPath = join(dir, "approved-plan.json");
+    const editedOutput = join(dir, "edited-render.mp4");
+    const approvedPlan = {
+      schema_version: 1,
+      status: "approved",
+      source: { filename: "synthetic.mp4", duration_seconds: 2 },
+      output: { aspect: "9:16", height: 720 },
+      segments: [
+        { id: "keep-1", source_start_seconds: 0, source_end_seconds: 0.5, timeline_start_seconds: 0, duration_seconds: 0.5, decision: "keep" },
+        { id: "keep-2", source_start_seconds: 1, source_end_seconds: 2, timeline_start_seconds: 0.5, duration_seconds: 1, decision: "keep" }
+      ],
+      review_items: [],
+      audio: { normalize: true, target_integrated_lufs: -16, true_peak_db: -1.5 },
+      captions: { mode: "not_provided", tracks: [] },
+      overlays: [],
+      safety: { source_modified: false, cuts_applied: false, requires_human_review: false }
+    };
+    await import("node:fs/promises").then(({ writeFile }) => writeFile(approvedPlanPath, JSON.stringify(approvedPlan), "utf8"));
+    const editedResult = JSON.parse(run("node", [cli, "--input", input, "--output", editedOutput, "--edit-plan", approvedPlanPath, "--aspect", "9:16", "--height", "720"]));
+    assert.equal(editedResult.render.edit_segments_rendered, 2);
+    assert.ok(editedResult.render.edited_duration_seconds < 2);
+    const editedProbe = JSON.parse(run("ffprobe", ["-v", "error", "-show_format", "-of", "json", editedOutput]));
+    assert.ok(Number(editedProbe.format.duration) > 1.4 && Number(editedProbe.format.duration) < 1.6);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
