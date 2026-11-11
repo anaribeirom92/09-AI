@@ -147,18 +147,18 @@ async function processJob(job: VideoJob) {
       .eq("id", job.id).eq("status", "running")
       .then(({ error }) => { if (error) console.error("[09-video-ingest] heartbeat failed", job.id, error); });
   }, 60_000);
-  const storagePath = job.payload.storage_path;
-  const assetId = job.payload.asset_id;
-  if (!storagePath || !assetId) throw new Error("Job sem asset_id ou storage_path.");
-  const { data: sourceAsset, error: sourceAssetError } = await supabase
-    .from("video_assets").select("mime_type,kind").eq("id", assetId).single();
-  if (sourceAssetError || !sourceAsset) throw sourceAssetError ?? new Error("Asset de origem não encontrado.");
-  const isImage = String(sourceAsset.mime_type).startsWith("image/");
-  const isVideo = String(sourceAsset.mime_type).startsWith("video/");
-  const isAudio = String(sourceAsset.mime_type).startsWith("audio/");
-  if (!isImage && !isVideo && !isAudio) throw new Error("Tipo de mídia não suportado pelo worker.");
   const workDir = await mkdtemp(join(tmpdir(), "09-video-"));
   try {
+    const storagePath = job.payload.storage_path;
+    const assetId = job.payload.asset_id;
+    if (!storagePath || !assetId) throw new Error("Job sem asset_id ou storage_path.");
+    const { data: sourceAsset, error: sourceAssetError } = await supabase
+      .from("video_assets").select("mime_type,kind").eq("id", assetId).single();
+    if (sourceAssetError || !sourceAsset) throw sourceAssetError ?? new Error("Asset de origem não encontrado.");
+    const isImage = String(sourceAsset.mime_type).startsWith("image/");
+    const isVideo = String(sourceAsset.mime_type).startsWith("video/");
+    const isAudio = String(sourceAsset.mime_type).startsWith("audio/");
+    if (!isImage && !isVideo && !isAudio) throw new Error("Tipo de mídia não suportado pelo worker.");
     const original = join(workDir, "original" + (extname(storagePath) || ".bin"));
     const thumbnail = join(workDir, "thumbnail.jpg");
     const proxy = join(workDir, "proxy.mp4");
