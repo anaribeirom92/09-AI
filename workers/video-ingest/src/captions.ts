@@ -52,3 +52,36 @@ export function parseSrt(content: string, mediaDuration?: number): CaptionCue[] 
   }
   return cues;
 }
+
+
+/** Re-time source captions onto the concatenated timeline of approved keep segments. */
+export function mapCaptionsToTimeline(cues: CaptionCue[], segments: Array<{ source_start_seconds: number; source_end_seconds: number; timeline_start_seconds: number }>): CaptionCue[] {
+  const mapped: CaptionCue[] = [];
+  for (const cue of cues) {
+    for (const segment of segments) {
+      const start = Math.max(cue.start_seconds, segment.source_start_seconds);
+      const end = Math.min(cue.end_seconds, segment.source_end_seconds);
+      if (end <= start) continue;
+      mapped.push({
+        index: mapped.length + 1,
+        start_seconds: Number((segment.timeline_start_seconds + start - segment.source_start_seconds).toFixed(3)),
+        end_seconds: Number((segment.timeline_start_seconds + end - segment.source_start_seconds).toFixed(3)),
+        text: cue.text
+      });
+    }
+  }
+  return mapped;
+}
+
+/** Serialize validated cues as an SRT subtitle track. */
+export function serializeSrt(cues: CaptionCue[]): string {
+  const stamp = (seconds: number) => {
+    const ms = Math.max(0, Math.round(seconds * 1000));
+    const hours = Math.floor(ms / 3600000);
+    const minutes = Math.floor((ms % 3600000) / 60000);
+    const secs = Math.floor((ms % 60000) / 1000);
+    const millis = ms % 1000;
+    return [hours, minutes, secs].map(value => String(value).padStart(2, "0")).join(":") + "," + String(millis).padStart(3, "0");
+  };
+  return cues.map((cue, index) => `${index + 1}\\n${stamp(cue.start_seconds)} --> ${stamp(cue.end_seconds)}\\n${cue.text}`).join("\\n\\n") + (cues.length ? "\\n" : "");
+}
