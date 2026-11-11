@@ -17,9 +17,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Install FFmpeg
+      - name: Verify FFmpeg tools
         run: |
-          sudo apt-get install -y ffmpeg
+          ffmpeg -version
+          ffprobe -version
       - name: Install dependencies
         working-directory: workers/video-ingest
         run: npm install
