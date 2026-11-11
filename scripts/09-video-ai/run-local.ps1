@@ -17,8 +17,8 @@ Push-Location $Worker
 try {
  npm run build
  if ($LASTEXITCODE -ne 0) { throw 'Build do motor falhou.' }
- $Args = @('--input',(Resolve-Path $InputVideo).Path,'--aspect',$Aspect,'--height',"$Height")
- if ($AnalyzeOnly) { $Args += '--analyze-only' } else {
+ $CliArgs = @('--input',(Resolve-Path $InputVideo).Path,'--aspect',$Aspect,'--height',"$Height")
+ if ($AnalyzeOnly) { $CliArgs += '--analyze-only' } else {
   $Parent = Split-Path -Parent $OutputVideo
   if ($Parent) { New-Item -ItemType Directory -Force -Path $Parent | Out-Null }
   $Args += @('--output',[IO.Path]::GetFullPath($OutputVideo))
@@ -26,6 +26,6 @@ try {
  if ($Captions) { $Args += @('--captions',[IO.Path]::GetFullPath($Captions)) }
  if ($Titles) { $Args += @('--titles',[IO.Path]::GetFullPath($Titles)) }
  if ($EditPlan) { $Args += @('--edit-plan',[IO.Path]::GetFullPath($EditPlan)) }
- node (Join-Path $Worker 'dist/index.js') @Args
+ node (Join-Path $Worker 'dist/index.js') @CliArgs
  if ($LASTEXITCODE -ne 0) { throw 'Processamento do vídeo falhou.' }
 } finally { Pop-Location }
