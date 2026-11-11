@@ -1,238 +1,65 @@
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import * as tus from "tus-js-client";
-import { createWriteStream, createReadStream } from "node:fs";
-import { mkdtemp, rm, stat } from "node:fs/promises";
+import { access, mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, extname, join } from "node:path";
-import { pipeline } from "node:stream/promises";
-import { Readable } from "node:stream";
+import { basename, dirname, extname, resolve } from "node:path";
 import { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
 
-const BUCKET = "09-video-ai";
-const POLL_MS = Number(process.env.POLL_INTERVAL_MS ?? 4000);
-const MAX_CONCURRENT = Math.max(1, Number(process.env.WORKER_CONCURRENCY ?? 1));
-const supabaseUrl = process.env.SUPABASE_URL;
-const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-if (!supabaseUrl || !serviceKey) throw new Error("SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY são obrigatórios.");
-
-const supabase = createClient(supabaseUrl, serviceKey, {
-  auth: { persistSession: false, autoRefreshToken: false }
-});
-
-type VideoJob = {
-  id: string;
-  organization_id: string;
-  project_id: string;
-  job_type: string;
-  payload: { asset_id?: string; storage_path?: string };
-  attempt_count: number;
-  max_attempts: number;
-};
-
-type Probe = {
-  format?: { duration?: string; format_name?: string; size?: string; bit_rate?: string };
-  streams?: Array<{
-    codec_type?: string; codec_name?: string; width?: number; height?: number;
-    r_frame_rate?: string; sample_rate?: string; channels?: number;
-  }>;
-};
-
-function run(command: string, args: string[]): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.setEncoding("utf8").on("data", chunk => { stdout += chunk; });
-    child.stderr.setEncoding("utf8").on("data", chunk => { stderr += chunk; });
-    child.on("error", reject);
-    child.on("close", code => code === 0 ? resolve(stdout) : reject(new Error(stderr.slice(-5000) || command + " terminou com código " + code)));
-  });
-}
-
-async function downloadToFile(client: SupabaseClient, storagePath: string, target: string) {
-  const { data, error } = await client.storage.from(BUCKET).createSignedUrl(storagePath, 300);
-  if (error || !data?.signedUrl) throw error ?? new Error("Não foi possível gerar URL temporária do original.");
-  const response = await fetch(data.signedUrl);
-  if (!response.ok || !response.body) throw new Error("Falha ao baixar o original: HTTP " + response.status);
-  await pipeline(Readable.fromWeb(response.body as import("node:stream/web").ReadableStream<Uint8Array>), createWriteStream(target));
-}
-
-function uploadTus(filePath: string, storagePath: string, contentType: string): Promise<void> {
-  const projectRef = new URL(supabaseUrl!).hostname.split(".")[0];
-  const endpoint = `https://${projectRef}.storage.supabase.co/storage/v1/upload/resumable`;
-  return new Promise(async (resolve, reject) => {
-    try {
-      const fileStats = await stat(filePath);
-      const upload = new tus.Upload(createReadStream(filePath), {
-        endpoint,
-        uploadSize: fileStats.size,
-        chunkSize: 6 * 1024 * 1024,
-        retryDelays: [0, 3000, 5000, 10000, 20000],
-        headers: { authorization: `Bearer ${serviceKey}`, apikey: serviceKey!, "x-upsert": "false" },
-        metadata: { bucketName: BUCKET, objectName: storagePath, contentType, cacheControl: "3600" },
-        onError: reject,
-        onSuccess: () => resolve()
-      });
-      upload.start();
-    } catch (error) { reject(error); }
-  });
-}
-
-
-async function recoverStaleJobs() {
-  const cutoff = new Date(Date.now() - 15 * 60 * 1000).toISOString();
-  const { data: stale, error } = await supabase.from("video_jobs")
-    .select("id,project_id,attempt_count,max_attempts")
-    .eq("job_type", "ingest").eq("status", "running").lt("started_at", cutoff).limit(25);
-  if (error) throw error;
-  for (const job of stale ?? []) {
-    const exhausted = job.attempt_count >= job.max_attempts;
-    const { error: updateError } = await supabase.from("video_jobs").update({
-      status: exhausted ? "failed" : "queued",
-      started_at: null,
-      finished_at: exhausted ? new Date().toISOString() : null,
-      last_error: "Worker lease expirou; job recuperado automaticamente."
-    }).eq("id", job.id).eq("status", "running").lt("started_at", cutoff);
-    if (updateError) throw updateError;
-    if (exhausted) await supabase.from("video_projects").update({ status: "failed" }).eq("id", job.project_id);
+type Options = { input: string; output: string; aspect: "9:16" | "16:9" | "1:1"; height: 720 | 1080 | 1440 | 2160; };
+function parseArgs(args: string[]): Options {
+  const values = new Map<string,string>();
+  for (let i=0;i<args.length;i++) {
+    const key=args[i];
+    if (key.startsWith("--")) {
+      const value=args[i+1];
+      if (!value || value.startsWith("--")) throw new Error("Informe um valor para "+key);
+      values.set(key.slice(2),value); i++;
+    }
   }
+  const input=values.get("input"), output=values.get("output");
+  if (!input || !output) throw new Error("Uso: npm start -- --input ./bruto.mp4 --output ./final.mp4 [--aspect 9:16|16:9|1:1] [--height 720|1080|1440|2160]");
+  const aspect=(values.get("aspect") ?? "9:16") as Options["aspect"];
+  const height=Number(values.get("height") ?? "1080") as Options["height"];
+  if (!["9:16","16:9","1:1"].includes(aspect)) throw new Error("Proporção inválida.");
+  if (![720,1080,1440,2160].includes(height)) throw new Error("Resolução inválida.");
+  return { input:resolve(input), output:resolve(output), aspect, height };
 }
-
-async function claimJob(): Promise<VideoJob | null> {
-  const { data: candidate, error: selectError } = await supabase
-    .from("video_jobs")
-    .select("id,organization_id,project_id,job_type,payload,attempt_count,max_attempts")
-    .eq("status", "queued")
-    .eq("job_type", "ingest")
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle();
-  if (selectError) throw selectError;
-  if (!candidate) return null;
-
-  // Conditional UPDATE is the atomic claim: only one worker can move queued -> running.
-  const { data, error } = await supabase.from("video_jobs")
-    .update({ status: "running", started_at: new Date().toISOString(), attempt_count: candidate.attempt_count + 1, last_error: null })
-    .eq("id", candidate.id)
-    .eq("status", "queued")
-    .select("id,organization_id,project_id,job_type,payload,attempt_count,max_attempts")
-    .maybeSingle();
-  if (error) throw error;
-  return data as VideoJob | null;
+function run(command:string,args:string[]):Promise<string>{
+  return new Promise((resolvePromise,reject)=>{
+    const child=spawn(command,args,{stdio:["ignore","pipe","pipe"]});
+    let stdout="",stderr="";
+    child.stdout.setEncoding("utf8").on("data",chunk=>stdout+=chunk);
+    child.stderr.setEncoding("utf8").on("data",chunk=>stderr+=chunk);
+    child.on("error",reject);
+    child.on("close",code=>code===0?resolvePromise(stdout):reject(new Error(stderr.slice(-5000)||command+" falhou ("+code+")")));
+  });
 }
-
-async function finishJob(job: VideoJob, result: Record<string, unknown>) {
-  const now = new Date().toISOString();
-  const { error } = await supabase.from("video_jobs").update({
-    status: "succeeded", result, finished_at: now, last_error: null
-  }).eq("id", job.id).eq("status", "running");
-  if (error) throw error;
-  await supabase.from("video_projects").update({ status: "analyzing", updated_at: now }).eq("id", job.project_id);
-}
-
-async function failJob(job: VideoJob, error: unknown) {
-  const message = error instanceof Error ? error.message : String(error);
-  const terminal = job.attempt_count >= job.max_attempts;
-  await supabase.from("video_jobs").update({
-    status: terminal ? "failed" : "queued",
-    last_error: message.slice(0, 4000),
-    finished_at: terminal ? new Date().toISOString() : null
-  }).eq("id", job.id).eq("status", "running");
-  if (terminal) await supabase.from("video_projects").update({ status: "failed" }).eq("id", job.project_id);
-}
-
-async function processJob(job: VideoJob) {
-  const heartbeat = setInterval(() => {
-    void supabase.from("video_jobs").update({ started_at: new Date().toISOString() })
-      .eq("id", job.id).eq("status", "running")
-      .then(({ error }) => { if (error) console.error("[09-video-ingest] heartbeat failed", job.id, error); });
-  }, 60_000);
-  const workDir = await mkdtemp(join(tmpdir(), "09-video-"));
+async function main(){
+  const options=parseArgs(process.argv.slice(2));
+  await access(options.input);
+  if (options.input===options.output) throw new Error("O arquivo de saída não pode sobrescrever o original.");
+  await mkdir(dirname(options.output),{recursive:true});
+  const temp=await mkdtemp(resolve(tmpdir(),"09-video-ai-"));
   try {
-    const storagePath = job.payload.storage_path;
-    const assetId = job.payload.asset_id;
-    if (!storagePath || !assetId) throw new Error("Job sem asset_id ou storage_path.");
-    const { data: sourceAsset, error: sourceAssetError } = await supabase
-      .from("video_assets").select("mime_type,kind").eq("id", assetId).single();
-    if (sourceAssetError || !sourceAsset) throw sourceAssetError ?? new Error("Asset de origem não encontrado.");
-    const isImage = String(sourceAsset.mime_type).startsWith("image/");
-    const isVideo = String(sourceAsset.mime_type).startsWith("video/");
-    const isAudio = String(sourceAsset.mime_type).startsWith("audio/");
-    if (!isImage && !isVideo && !isAudio) throw new Error("Tipo de mídia não suportado pelo worker.");
-    const original = join(workDir, "original" + (extname(storagePath) || ".bin"));
-    const thumbnail = join(workDir, "thumbnail.jpg");
-    const proxy = join(workDir, "proxy.mp4");
-    await downloadToFile(supabase, storagePath, original);
-
-    const probeRaw = await run("ffprobe", ["-v", "error", "-show_format", "-show_streams", "-of", "json", original]);
-    const probe = JSON.parse(probeRaw) as Probe;
-    const duration = Number(probe.format?.duration ?? 0);
-    const videoStream = probe.streams?.find(stream => stream.codec_type === "video");
-    const audioStream = probe.streams?.find(stream => stream.codec_type === "audio");
-    if (isVideo && !videoStream) throw new Error("O arquivo de vídeo não contém uma faixa de vídeo reconhecível.");
-    if (isAudio && !audioStream) throw new Error("O arquivo de áudio não contém uma faixa de áudio reconhecível.");
-    if (isImage && !videoStream) throw new Error("A imagem não pôde ser decodificada.");
-
-    const thumbnailPath = (isVideo || isImage) ? `${job.project_id}/${randomUUID()}/thumbnail.jpg` : null;
-    const proxyPath = isVideo ? `${job.project_id}/${randomUUID()}/proxy.mp4` : null;
-    if (isVideo || isImage) {
-      if (isVideo) {
-        const seek = Math.max(0, Math.min(duration * 0.1, Math.max(0, duration - 0.1)));
-        await run("ffmpeg", ["-y", "-ss", String(seek), "-i", original, "-frames:v", "1", "-vf", "scale='min(640,iw)':-2", "-q:v", "4", thumbnail]);
-      } else {
-        await run("ffmpeg", ["-y", "-i", original, "-frames:v", "1", "-vf", "scale='min(640,iw)':-2", "-q:v", "4", thumbnail]);
-      }
-      if (isVideo) {
-        await run("ffmpeg", ["-y", "-i", original, "-vf", "scale='min(960,iw)':-2", "-c:v", "libx264", "-preset", "veryfast", "-crf", "28", "-c:a", "aac", "-b:a", "96k", "-movflags", "+faststart", proxy]);
-      }
-      await uploadTus(thumbnail, thumbnailPath!, "image/jpeg");
-      if (proxyPath) await uploadTus(proxy, proxyPath, "video/mp4");
-    }
-
-    const baseMetadata = {
-      duration_ms: Math.round(duration * 1000),
-      source_format: probe.format?.format_name ?? null,
-      video: videoStream ? { codec: videoStream.codec_name ?? null, width: videoStream.width ?? null, height: videoStream.height ?? null, frame_rate: videoStream.r_frame_rate ?? null } : null,
-      audio: audioStream ? { codec: audioStream.codec_name ?? null, sample_rate: audioStream.sample_rate ?? null, channels: audioStream.channels ?? null } : null,
-      media_kind: sourceAsset.kind
+    const probe=JSON.parse(await run("ffprobe",["-v","error","-show_format","-show_streams","-of","json",options.input])) as {
+      format?:{duration?:string;format_name?:string}; streams?:Array<{codec_type?:string;width?:number;height?:number;codec_name?:string}>;
     };
-    const assets = [];
-    if (thumbnailPath) assets.push({ id: randomUUID(), organization_id: job.organization_id, project_id: job.project_id, kind: "thumbnail", storage_path: thumbnailPath, original_filename: "thumbnail.jpg", mime_type: "image/jpeg", size_bytes: (await stat(thumbnail)).size, duration_ms: null, metadata: { generated_by: "ingest_worker", source_asset_id: assetId }, created_by: null });
-    if (proxyPath) assets.push({ id: randomUUID(), organization_id: job.organization_id, project_id: job.project_id, kind: "proxy", storage_path: proxyPath, original_filename: "proxy.mp4", mime_type: "video/mp4", size_bytes: (await stat(proxy)).size, duration_ms: Math.round(duration * 1000), metadata: { generated_by: "ingest_worker", source_asset_id: assetId }, created_by: null });
-    if (assets.length) {
-      const { error } = await supabase.from("video_assets").insert(assets);
-      if (error) throw error;
-    }
-    const { error: updateError } = await supabase.from("video_assets").update({
-      duration_ms: Math.round(duration * 1000), metadata: { ...baseMetadata, ingested_at: new Date().toISOString() }
-    }).eq("id", assetId);
-    if (updateError) throw updateError;
-
-    await finishJob(job, { asset_id: assetId, ...baseMetadata, thumbnail_path: thumbnailPath, proxy_path: proxyPath });
-  } finally {
-    clearInterval(heartbeat);
-    await rm(workDir, { recursive: true, force: true });
-  }
+    const video=probe.streams?.find(stream=>stream.codec_type==="video");
+    if(!video) throw new Error("O arquivo não contém uma faixa de vídeo.");
+    const audio=probe.streams?.some(stream=>stream.codec_type==="audio");
+    const [w,h]=options.aspect==="9:16"?[9,16]:options.aspect==="16:9"?[16,9]:[1,1];
+    const width=Math.round(options.height*w/h/2)*2;
+    const scaleCrop=`scale=${width}:${options.height}:force_original_aspect_ratio=increase,crop=${width}:${options.height},setsar=1`;
+    const filters=audio?`${scaleCrop},fps=30`:`${scaleCrop},fps=30`;
+    const outputTemp=resolve(temp,"render.mp4");
+    const args=["-hide_banner","-y","-i",options.input,"-map","0:v:0"];
+    if(audio) args.push("-map","0:a:0?");
+    args.push("-vf",filters,"-c:v","libx264","-preset","medium","-crf","20","-pix_fmt","yuv420p");
+    if(audio) args.push("-af","loudnorm=I=-16:TP=-1.5:LRA=11","-c:a","aac","-b:a","192k");
+    args.push("-movflags","+faststart","-shortest",outputTemp);
+    await run("ffmpeg",args);
+    await run("ffmpeg",["-v","error","-i",outputTemp,"-f","null","-"]);
+    const { copyFile }=await import("node:fs/promises");
+    await copyFile(outputTemp,options.output);
+    console.log(JSON.stringify({ok:true,input:basename(options.input),output:options.output,duration_seconds:Number(probe.format?.duration??0),source:{format:probe.format?.format_name??null,width:video.width??null,height:video.height??null,video_codec:video.codec_name??null,audio},render:{aspect:options.aspect,width,height,video_codec:"h264",audio_normalized:audio}},null,2));
+  } finally { await rm(temp,{recursive:true,force:true}); }
 }
-
-async function loop() {
-  console.log("[09-video-ingest] worker online; concurrency=" + MAX_CONCURRENT);
-  const active = new Set<Promise<void>>();
-  while (true) {
-    try { await recoverStaleJobs(); }
-    catch (error) { console.error("[09-video-ingest] stale job recovery failed", error); }
-    while (active.size < MAX_CONCURRENT) {
-      const job = await claimJob();
-      if (!job) break;
-      const task = processJob(job)
-        .catch(async error => { console.error("[09-video-ingest] job failed", job.id, error); await failJob(job, error); })
-        .finally(() => active.delete(task));
-      active.add(task);
-    }
-    if (active.size === 0) await new Promise(resolve => setTimeout(resolve, POLL_MS));
-    else await Promise.race([new Promise(resolve => setTimeout(resolve, POLL_MS)), ...active]);
-  }
-}
-
-loop().catch(error => { console.error("[09-video-ingest] fatal", error); process.exit(1); });
+main().catch(error=>{console.error("[09 VIDEO AI]",error instanceof Error?error.message:error);process.exitCode=1;});
