@@ -165,8 +165,23 @@ async function main() {
     args.push("-movflags", "+faststart", "-shortest", outputTemp);
     await run("ffmpeg", args);
     await run("ffmpeg", ["-v", "error", "-i", outputTemp, "-f", "null", "-"]);
+    const renderedProbe = JSON.parse((await run("ffprobe", ["-v", "error", "-show_format", "-show_streams", "-of", "json", outputTemp])).stdout) as {
+      format?: { duration?: string };
+      streams?: Array<{ codec_type?: string; codec_name?: string; width?: number; height?: number }>;
+    };
+    const renderedVideo = renderedProbe.streams?.find(stream => stream.codec_type === "video");
+    const renderedAudio = renderedProbe.streams?.find(stream => stream.codec_type === "audio");
+    const expectedDuration = segments.reduce((sum, segment) => sum + segment.duration_seconds, 0);
+    const renderedDuration = Number(renderedProbe.format?.duration ?? 0);
+    if (!renderedVideo || renderedVideo.codec_name !== "h264") throw new Error("Validação final: faixa de vídeo H.264 ausente.");
+    if (renderedVideo.width !== width || renderedVideo.height !== options.height) throw new Error("Validação final: dimensões do vídeo diferentes das solicitadas.");
+    if (audio && (!renderedAudio || renderedAudio.codec_name !== "aac")) throw new Error("Validação final: faixa de áudio AAC ausente.");
+    if (!audio && renderedAudio) throw new Error("Validação final: foi criada uma faixa de áudio que não existia na origem.");
+    if (!Number.isFinite(renderedDuration) || Math.abs(renderedDuration - expectedDuration) > Math.max(0.35, expectedDuration * 0.01)) {
+      throw new Error("Validação final: duração renderizada incompatível com o plano de edição.");
+    }
     await copyFile(outputTemp, options.output);
-    console.log(JSON.stringify({ ok: true, input: basename(options.input), output: options.output, duration_seconds: analysis.duration_seconds, detected_silences_for_review: analysis.audio_analysis.detected_silence_count, source: analysis.source, render: { aspect: options.aspect, width, height: options.height, video_codec: "h264", audio_normalized: audioNormalized, silent_audio_preserved_without_normalization: audio && !audioNormalized, edit_segments_rendered: segments.length, edited_duration_seconds: segments.reduce((sum, segment) => sum + segment.duration_seconds, 0) } }, null, 2));
+    console.log(JSON.stringify({ ok: true, input: basename(options.input), output: options.output, duration_seconds: analysis.duration_seconds, detected_silences_for_review: analysis.audio_analysis.detected_silence_count, source: analysis.source, render: { aspect: options.aspect, width, height: options.height, video_codec: renderedVideo.codec_name, audio_codec: renderedAudio?.codec_name ?? null, duration_seconds: renderedDuration, audio_normalized: audioNormalized, silent_audio_preserved_without_normalization: audio && !audioNormalized, edit_segments_rendered: segments.length, edited_duration_seconds: expectedDuration, validation: "passed" } }, null, 2));
   } finally { await rm(temp, { recursive: true, force: true }); }
 }
 main().catch(error => { console.error("[09 VIDEO AI]", error instanceof Error ? error.message : error); process.exitCode = 1; });
