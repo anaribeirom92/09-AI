@@ -8,12 +8,12 @@ import { buildEditFilterGraph } from "./render-plan.js";
 import { mapCaptionsToTimeline, parseSrt, serializeSrt } from "./captions.js";
 
 type Aspect = "9:16" | "16:9" | "1:1";
-type Options = { input: string; output?: string; aspect: Aspect; height: 720 | 1080 | 1440 | 2160; analyzeOnly: boolean; transcribe: boolean; whisperBin: string; whisperModel?: string; language: string; silenceNoise: string; silenceDuration: number; report?: string; plan?: string; editPlan?: string; captions?: string };
+type Options = { input: string; output?: string; aspect: Aspect; height: 720 | 1080 | 1440 | 2160; analyzeOnly: boolean; transcribe: boolean; whisperBin: string; whisperModel?: string; language: string; silenceNoise: string; silenceDuration: number; report?: string; plan?: string; editPlan?: string; captions?: string; fadeIn: number; fadeOut: number };
 type ProcessResult = { stdout: string; stderr: string };
 function parseArgs(args: string[]): Options {
   const values = new Map<string, string>();
   const flags = new Set(["analyze-only", "transcribe"]);
-  const valueOptions = new Set(["input", "output", "aspect", "height", "silence-noise", "silence-duration", "report", "plan", "whisper-model", "whisper-bin", "language", "edit-plan", "captions"]);
+  const valueOptions = new Set(["input", "output", "aspect", "height", "silence-noise", "silence-duration", "report", "plan", "whisper-model", "whisper-bin", "language", "edit-plan", "captions", "fade-in", "fade-out"]);
   for (let i = 0; i < args.length; i++) {
     const key = args[i];
     if (key.startsWith("--")) {
@@ -36,11 +36,14 @@ function parseArgs(args: string[]): Options {
   const height = Number(values.get("height") ?? "1080") as Options["height"];
   const silenceDuration = Number(values.get("silence-duration") ?? "0.45");
   const silenceNoise = values.get("silence-noise") ?? "-35dB";
+  const fadeIn = Number(values.get("fade-in") ?? "0");
+  const fadeOut = Number(values.get("fade-out") ?? "0");
   if (!/^-?\d+(?:\.\d+)?dB$/i.test(silenceNoise) || Number.parseFloat(silenceNoise) > 0 || Number.parseFloat(silenceNoise) < -100) throw new Error("Limite de silêncio inválido; use um valor entre -100dB e 0dB.");
   if (!["9:16", "16:9", "1:1"].includes(aspect)) throw new Error("Proporção inválida.");
   if (![720, 1080, 1440, 2160].includes(height)) throw new Error("Resolução inválida.");
   if (!Number.isFinite(silenceDuration) || silenceDuration < 0.1 || silenceDuration > 10) throw new Error("Duração mínima de silêncio deve estar entre 0.1 e 10 segundos.");
-  return { input: resolve(input), output: output ? resolve(output) : undefined, aspect, height, analyzeOnly, transcribe, whisperBin: values.get("whisper-bin") ?? "whisper-cli", whisperModel: whisperModel ? resolve(whisperModel) : undefined, language: values.get("language") ?? "pt", silenceNoise, silenceDuration, report: values.get("report") ? resolve(values.get("report")!) : undefined, plan: values.get("plan") ? resolve(values.get("plan")!) : undefined, editPlan: values.get("edit-plan") ? resolve(values.get("edit-plan")!) : undefined, captions: values.get("captions") ? resolve(values.get("captions")!) : undefined };
+  if (![fadeIn, fadeOut].every(value => Number.isFinite(value) && value >= 0 && value <= 10)) throw new Error("Fades devem estar entre 0 e 10 segundos.");
+  return { input: resolve(input), output: output ? resolve(output) : undefined, aspect, height, analyzeOnly, transcribe, whisperBin: values.get("whisper-bin") ?? "whisper-cli", whisperModel: whisperModel ? resolve(whisperModel) : undefined, language: values.get("language") ?? "pt", silenceNoise, silenceDuration, report: values.get("report") ? resolve(values.get("report")!) : undefined, plan: values.get("plan") ? resolve(values.get("plan")!) : undefined, editPlan: values.get("edit-plan") ? resolve(values.get("edit-plan")!) : undefined, captions: values.get("captions") ? resolve(values.get("captions")!) : undefined, fadeIn, fadeOut };
 }
 function run(command: string, args: string[]): Promise<ProcessResult> {
   return new Promise((resolvePromise, reject) => {
@@ -176,8 +179,14 @@ async function main() {
         audioMap = "[anorm]";
         audioNormalized = true;
       }
+      if (options.fadeIn > 0 || options.fadeOut > 0) {
+        const audioFade = [options.fadeIn > 0 ? `afade=t=in:st=0:d=${options.fadeIn.toFixed(3)}` : "", options.fadeOut > 0 ? `afade=t=out:st=${(expectedDuration - options.fadeOut).toFixed(3)}:d=${options.fadeOut.toFixed(3)}` : ""].filter(Boolean).join(",");
+        filter += `;${audioMap}${audioFade}[afaded]`;
+        audioMap = "[afaded]";
+      }
     }
-    const args = ["-hide_banner", "-y", "-i", options.input, "-filter_complex", filter, "-map", "[vfinal]"];
+    const videoMap = options.fadeIn > 0 || options.fadeOut > 0 ? "[vwithfade]" : "[vfinal]";
+    const args = ["-hide_banner", "-y", "-i", options.input, "-filter_complex", filter, "-map", videoMap];
     if (audioMap) args.push("-map", audioMap);
     args.push("-c:v", "libx264", "-preset", "medium", "-crf", "20", "-pix_fmt", "yuv420p");
     if (audio) args.push("-c:a", "aac", "-b:a", "192k");
@@ -191,6 +200,12 @@ async function main() {
     const renderedVideo = renderedProbe.streams?.find(stream => stream.codec_type === "video");
     const renderedAudio = renderedProbe.streams?.find(stream => stream.codec_type === "audio");
     const expectedDuration = segments.reduce((sum, segment) => sum + segment.duration_seconds, 0);
+    if (options.fadeIn + options.fadeOut > expectedDuration) throw new Error("A soma dos fades não pode exceder a duração do vídeo editado.");
+    if (options.fadeIn > expectedDuration / 2 || options.fadeOut > expectedDuration / 2) throw new Error("Cada fade deve ter no máximo metade da duração do vídeo editado.");
+    if (options.fadeIn > 0 || options.fadeOut > 0) {
+      const videoFade = [options.fadeIn > 0 ? `fade=t=in:st=0:d=${options.fadeIn.toFixed(3)}` : "", options.fadeOut > 0 ? `fade=t=out:st=${(expectedDuration - options.fadeOut).toFixed(3)}:d=${options.fadeOut.toFixed(3)}` : ""].filter(Boolean).join(",");
+      filter += `;[vfinal]${videoFade}[vwithfade]`;
+    }
     const renderedDuration = Number(renderedProbe.format?.duration ?? 0);
     if (!renderedVideo || renderedVideo.codec_name !== "h264") throw new Error("Validação final: faixa de vídeo H.264 ausente.");
     if (renderedVideo.width !== width || renderedVideo.height !== options.height) throw new Error("Validação final: dimensões do vídeo diferentes das solicitadas.");
@@ -200,7 +215,7 @@ async function main() {
       throw new Error("Validação final: duração renderizada incompatível com o plano de edição.");
     }
     await copyFile(outputTemp, options.output);
-    console.log(JSON.stringify({ ok: true, input: basename(options.input), output: options.output, duration_seconds: analysis.duration_seconds, detected_silences_for_review: analysis.audio_analysis.detected_silence_count, source: analysis.source, render: { aspect: options.aspect, width, height: options.height, video_codec: renderedVideo.codec_name, audio_codec: renderedAudio?.codec_name ?? null, duration_seconds: renderedDuration, audio_normalized: audioNormalized, silent_audio_preserved_without_normalization: audio && !audioNormalized, edit_segments_rendered: segments.length, edited_duration_seconds: expectedDuration, captions_burned_in: captionCount, validation: "passed" } }, null, 2));
+    console.log(JSON.stringify({ ok: true, input: basename(options.input), output: options.output, duration_seconds: analysis.duration_seconds, detected_silences_for_review: analysis.audio_analysis.detected_silence_count, source: analysis.source, render: { aspect: options.aspect, width, height: options.height, video_codec: renderedVideo.codec_name, audio_codec: renderedAudio?.codec_name ?? null, duration_seconds: renderedDuration, audio_normalized: audioNormalized, silent_audio_preserved_without_normalization: audio && !audioNormalized, edit_segments_rendered: segments.length, edited_duration_seconds: expectedDuration, captions_burned_in: captionCount, fade_in_seconds: options.fadeIn, fade_out_seconds: options.fadeOut, validation: "passed" } }, null, 2));
   } finally { await rm(temp, { recursive: true, force: true }); }
 }
 main().catch(error => { console.error("[09 VIDEO AI]", error instanceof Error ? error.message : error); process.exitCode = 1; });
