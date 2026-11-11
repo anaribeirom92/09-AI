@@ -1,7 +1,7 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import * as tus from "tus-js-client";
 import { createWriteStream, createReadStream } from "node:fs";
-import { mkdtemp, mkdir, rm, stat } from "node:fs/promises";
+import { mkdtemp, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, extname, join } from "node:path";
 import { pipeline } from "node:stream/promises";
@@ -78,12 +78,6 @@ function uploadTus(filePath: string, storagePath: string, contentType: string): 
   });
 }
 
-async function uploadSmall(client: SupabaseClient, filePath: string, storagePath: string, contentType: string) {
-  const { error } = await client.storage.from(BUCKET).upload(storagePath, createReadStream(filePath) as never, {
-    contentType, upsert: false, cacheControl: "3600"
-  });
-  if (error) throw error;
-}
 
 async function claimJob(): Promise<VideoJob | null> {
   const { data: candidate, error: selectError } = await supabase
