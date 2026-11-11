@@ -3,7 +3,7 @@ services:
     name: 09-video-ingest
     runtime: docker
     dockerfilePath: ./workers/video-ingest/Dockerfile
-    dockerContext: .
+    dockerContext: ./workers/video-ingest
     plan: starter
     autoDeploy: false
     envVars:
