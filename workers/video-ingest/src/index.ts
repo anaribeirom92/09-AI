@@ -1,16 +1,17 @@
-import { access, copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { parseSilences, type SilenceInterval } from "./silence.js";
 import { createReviewEditPlan, type ReviewItem } from "./edit-plan.js";
+import { parseSrt } from "./captions.js";
 
 type Aspect = "9:16" | "16:9" | "1:1";
-type Options = { input: string; output?: string; aspect: Aspect; height: 720 | 1080 | 1440 | 2160; analyzeOnly: boolean; silenceNoise: string; silenceDuration: number; report?: string; plan?: string };
+type Options = { input: string; output?: string; aspect: Aspect; height: 720 | 1080 | 1440 | 2160; analyzeOnly: boolean; transcribe: boolean; whisperBin: string; whisperModel?: string; language: string; silenceNoise: string; silenceDuration: number; report?: string; plan?: string };
 type ProcessResult = { stdout: string; stderr: string };
 function parseArgs(args: string[]): Options {
   const values = new Map<string, string>();
-  const flags = new Set(["analyze-only"]);
+  const flags = new Set(["analyze-only", "transcribe"]);
   for (let i = 0; i < args.length; i++) {
     const key = args[i];
     if (key.startsWith("--")) {
@@ -23,14 +24,18 @@ function parseArgs(args: string[]): Options {
   }
   const input = values.get("input"), output = values.get("output");
   const analyzeOnly = values.has("analyze-only");
-  if (!input || (!output && !analyzeOnly)) throw new Error("Uso: npm start -- --input ./bruto.mp4 --output ./final.mp4 [--aspect 9:16|16:9|1:1] [--height 720|1080|1440|2160] [--analyze-only] [--report ./analise.json] [--plan ./plano-edicao.json]");
+  const transcribe = values.has("transcribe");
+  const whisperModel = values.get("whisper-model");
+  if (transcribe && !whisperModel) throw new Error("--transcribe exige --whisper-model com o caminho do modelo local.");
+  if (transcribe && analyzeOnly) throw new Error("--transcribe não pode ser combinado com --analyze-only.");
+  if (!input || (!output && !analyzeOnly)) throw new Error("Uso: npm start -- --input ./bruto.mp4 --output ./final.mp4 [--aspect 9:16|16:9|1:1] [--height 720|1080|1440|2160] [--analyze-only] [--transcribe --whisper-model ./ggml-base.bin] [--language pt] [--report ./analise.json] [--plan ./plano-edicao.json]");
   const aspect = (values.get("aspect") ?? "9:16") as Aspect;
   const height = Number(values.get("height") ?? "1080") as Options["height"];
   const silenceDuration = Number(values.get("silence-duration") ?? "0.45");
   if (!["9:16", "16:9", "1:1"].includes(aspect)) throw new Error("Proporção inválida.");
   if (![720, 1080, 1440, 2160].includes(height)) throw new Error("Resolução inválida.");
   if (!Number.isFinite(silenceDuration) || silenceDuration < 0.1 || silenceDuration > 10) throw new Error("Duração mínima de silêncio deve estar entre 0.1 e 10 segundos.");
-  return { input: resolve(input), output: output ? resolve(output) : undefined, aspect, height, analyzeOnly, silenceNoise: values.get("silence-noise") ?? "-35dB", silenceDuration, report: values.get("report") ? resolve(values.get("report")!) : undefined, plan: values.get("plan") ? resolve(values.get("plan")!) : undefined };
+  return { input: resolve(input), output: output ? resolve(output) : undefined, aspect, height, analyzeOnly, transcribe, whisperBin: values.get("whisper-bin") ?? "whisper-cli", whisperModel: whisperModel ? resolve(whisperModel) : undefined, language: values.get("language") ?? "pt", silenceNoise: values.get("silence-noise") ?? "-35dB", silenceDuration, report: values.get("report") ? resolve(values.get("report")!) : undefined, plan: values.get("plan") ? resolve(values.get("plan")!) : undefined };
 }
 function run(command: string, args: string[]): Promise<ProcessResult> {
   return new Promise((resolvePromise, reject) => {
@@ -68,6 +73,9 @@ async function main() {
   const options = parseArgs(process.argv.slice(2));
   await access(options.input);
   if (options.output && options.input === options.output) throw new Error("O arquivo de saída não pode sobrescrever o original.");
+  if (options.transcribe && !options.output) throw new Error("A transcrição exige --output ./legendas.srt.");
+  if (options.transcribe && options.output && !options.output.toLowerCase().endsWith(".srt")) throw new Error("A saída da transcrição precisa ter extensão .srt.");
+  if (options.transcribe && options.whisperModel) await access(options.whisperModel);
   if (options.report && options.input === options.report) throw new Error("O relatório não pode sobrescrever o vídeo original.");
   if (options.plan && !options.analyzeOnly) throw new Error("A geração de plano exige --analyze-only.");
   if (options.plan && options.input === options.plan) throw new Error("O plano não pode sobrescrever o vídeo original.");
@@ -75,6 +83,25 @@ async function main() {
   const probeResult = await run("ffprobe", ["-v", "error", "-show_format", "-show_streams", "-of", "json", options.input]);
   const probe = JSON.parse(probeResult.stdout) as { format?: { duration?: string; format_name?: string }; streams?: Array<{ codec_type?: string; width?: number; height?: number; codec_name?: string; sample_rate?: string; channels?: number; side_data_list?: Array<{ rotation?: number }> }> };
   const analysis = await analyze(options, probe);
+  if (options.transcribe) {
+    if (!probe.streams?.some(stream => stream.codec_type === "audio")) throw new Error("Não há faixa de áudio para transcrever.");
+    const duration = Number(probe.format?.duration ?? 0);
+    const temp = await mkdtemp(resolve(tmpdir(), "09-video-ai-transcribe-"));
+    try {
+      const wavPath = resolve(temp, "audio-16khz-mono.wav");
+      const srtPrefix = resolve(temp, "transcript");
+      const srtTemp = srtPrefix + ".srt";
+      await run("ffmpeg", ["-hide_banner", "-y", "-i", options.input, "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", wavPath]);
+      await run(options.whisperBin, ["-m", options.whisperModel!, "-f", wavPath, "-l", options.language, "-osrt", "-of", srtPrefix, "-t", "4", "-ng", "-np"]);
+      const srt = await readFile(srtTemp, "utf8");
+      const cues = parseSrt(srt, duration);
+      if (cues.length === 0) throw new Error("O Whisper não retornou legendas; confira o áudio e o modelo.");
+      await mkdir(dirname(options.output!), { recursive: true });
+      await writeFile(options.output!, srt, "utf8");
+      console.log(JSON.stringify({ ok: true, mode: "transcription", input: basename(options.input), output: options.output, language: options.language, model: basename(options.whisperModel!), captions: cues.length, engine: "whisper.cpp", processing: "local_cpu" }, null, 2));
+    } finally { await rm(temp, { recursive: true, force: true }); }
+    return;
+  }
   if (options.analyzeOnly) {
     const reportPath = options.report ?? resolve(dirname(options.input), basename(options.input).replace(/\.[^.]+$/, "") + ".09-video-analysis.json");
     await mkdir(dirname(reportPath), { recursive: true });
