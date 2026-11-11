@@ -38,12 +38,24 @@ npm start -- --input ./bruto.mp4 --analyze-only
 
 O relatório é salvo ao lado do original com o sufixo `.09-video-analysis.json`. Também é possível escolher o destino com `--report ./analise.json`. A detecção usa FFmpeg `silencedetect`, com padrão de -35 dB por pelo menos 0,45 s. Ajustes opcionais: `--silence-noise -32dB` e `--silence-duration 0.6`.
 
-Cada intervalo é registrado como sugestão de revisão, inclusive silêncio que chega ao fim do arquivo. Pausas naturais fazem parte da fala e precisam ser avaliadas no contexto. O parser tem testes automatizados para intervalos fechados, silêncio final, múltiplos intervalos e dados inválidos.
+Cada intervalo é registrado como sugestão de revisão, inclusive silêncio que chega ao fim do arquivo. Pausas naturais fazem parte da fala e precisam ser avaliadas no contexto.
 
-Para executar os testes locais: `npm test`.
+## Plano de edição (EDL) — primeira versão
+
+O módulo `src/edit-plan.ts` define um formato estruturado para decisões de edição. Nesta etapa, ele gera um plano conservador: mantém 100% do vídeo original, organiza pausas como itens para revisão humana e registra parâmetros de áudio e formato de saída. A validação verifica duração, limites dos segmentos e invariantes de segurança. Ainda não aplica cortes nem renderiza a partir do EDL.
+
+## Testes
+
+```bash
+npm test
+```
+
+Os testes cobrem parsing de silêncio (intervalos fechados, silêncio final, múltiplos intervalos e dados inválidos) e geração/validação de planos de edição.
 
 ## Limites desta fundação
+
 Esta etapa é um renderizador local determinístico, não a edição criativa completa. Ainda não faz transcrição, seleção inteligente de melhores takes, remoção semântica de erros, legendas animadas, busca/geração de B-roll, motion graphics ou montagem guiada por IA. Essas capacidades serão acrescentadas por etapas sem exigir um serviço de processamento contínuo.
 
 ## Privacidade e custo
+
 Os arquivos não são enviados a um bucket ou servidor por este CLI. A única cópia persistente é o arquivo final que você escolheu salvar. A pasta intermediária temporária é apagada ao concluir. Não há custo de hospedagem ou chamadas de IA neste motor básico.
