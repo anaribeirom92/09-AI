@@ -88,7 +88,12 @@ export function validateEditPlan(plan: EditPlan): string[] {
   if (!plan.segments.length) errors.push("O plano precisa conter ao menos um segmento.");
   let expectedTimelineStart = 0;
   let previousSourceStart = -1;
+  let previousSourceEnd = -1;
+  const segmentIds = new Set<string>();
   for (const [index, segment] of plan.segments.entries()) {
+    if (!segment.id.trim()) errors.push(`Segmento ${index + 1}: identificador vazio.`);
+    if (segmentIds.has(segment.id)) errors.push(`Segmento ${index + 1}: identificador duplicado.`);
+    segmentIds.add(segment.id);
     if (!Number.isFinite(segment.source_start_seconds) || segment.source_start_seconds < 0) errors.push(`Segmento ${index + 1}: início inválido.`);
     if (!Number.isFinite(segment.source_end_seconds) || segment.source_end_seconds <= segment.source_start_seconds) errors.push(`Segmento ${index + 1}: intervalo inválido.`);
     if (segment.source_end_seconds > plan.source.duration_seconds) errors.push(`Segmento ${index + 1}: ultrapassa a duração original.`);
@@ -99,9 +104,13 @@ export function validateEditPlan(plan: EditPlan): string[] {
     }
     if (Math.abs(segment.timeline_start_seconds - expectedTimelineStart) > 0.01) errors.push(`Segmento ${index + 1}: timeline precisa ser contínua.`);
     if (segment.source_start_seconds < previousSourceStart) errors.push(`Segmento ${index + 1}: ordem da origem inválida.`);
+    if (segment.source_start_seconds < previousSourceEnd - 0.01) errors.push(`Segmento ${index + 1}: sobrepõe o segmento anterior na origem.`);
     expectedTimelineStart += segment.duration_seconds;
     previousSourceStart = segment.source_start_seconds;
+    previousSourceEnd = segment.source_end_seconds;
   }
+  if (!["9:16", "16:9", "1:1"].includes(plan.output.aspect)) errors.push("Proporção de saída inválida.");
+  if (![720, 1080, 1440, 2160].includes(plan.output.height)) errors.push("Resolução de saída inválida.");
   if (plan.safety.source_modified || plan.safety.cuts_applied) {
     errors.push("Plano não pode declarar alterações no original ou cortes já aplicados.");
   }
