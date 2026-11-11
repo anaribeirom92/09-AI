@@ -50,7 +50,7 @@ O módulo `src/edit-plan.ts` define um formato estruturado para decisões de edi
 npm test
 ```
 
-Os testes cobrem parsing de silêncio (intervalos fechados, silêncio final, múltiplos intervalos e dados inválidos) e geração/validação de planos de edição.
+Os testes cobrem parsing de silêncio (intervalos fechados, silêncio final, múltiplos intervalos e dados inválidos), geração/validação de planos de edição e um smoke test de ponta a ponta com vídeo sintético. O CI instala FFmpeg e valida análise, exportação EDL e renderização.
 
 ## Limites desta fundação
 
