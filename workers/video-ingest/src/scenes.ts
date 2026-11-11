@@ -2,7 +2,7 @@ export function parseSceneTimestamps(log: string, mediaDuration: number): number
   if (!Number.isFinite(mediaDuration) || mediaDuration <= 0) return [];
   const timestamps: number[] = [];
   for (const line of log.split(/\r?\n/)) {
-    const match = line.match(/showinfo.*?pts_time:([0-9]+(?:\.[0-9]+)?)/);
+    const match = line.match(/showinfo.*?pts_time:([-+]?[0-9]+(?:\.[0-9]+)?)/);
     if (!match) continue;
     const time = Number(match[1]);
     if (!Number.isFinite(time) || time <= 0 || time >= mediaDuration) continue;
