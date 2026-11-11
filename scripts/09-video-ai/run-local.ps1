@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
  [Parameter(Mandatory=$true)][string]$InputVideo,
- [Parameter(Mandatory=$true)][string]$OutputVideo,
+ [string]$OutputVideo,
  [ValidateSet('9:16','16:9','1:1')][string]$Aspect = '9:16',
  [ValidateSet(720,1080,1440,2160)][int]$Height = 1080,
  [string]$Captions,[string]$Titles,[string]$EditPlan,[switch]$AnalyzeOnly
@@ -19,6 +19,7 @@ try {
  if ($LASTEXITCODE -ne 0) { throw 'Build do motor falhou.' }
  $CliArgs = @('--input',(Resolve-Path $InputVideo).Path,'--aspect',$Aspect,'--height',"$Height")
  if ($AnalyzeOnly) { $CliArgs += '--analyze-only' } else {
+  if (-not $OutputVideo) { throw 'Informe -OutputVideo quando não estiver usando -AnalyzeOnly.' }
   $Parent = Split-Path -Parent $OutputVideo
   if ($Parent) { New-Item -ItemType Directory -Force -Path $Parent | Out-Null }
   $Args += @('--output',[IO.Path]::GetFullPath($OutputVideo))
