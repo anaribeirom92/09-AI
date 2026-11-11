@@ -8,6 +8,7 @@ import {
   LoaderCircle, Plus, ShieldCheck, Sparkles, UploadCloud, WandSparkles, X
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import * as tus from "tus-js-client";
 
 type VideoProject = {
   id: string; name: string; description: string | null; status: string;
@@ -26,6 +27,37 @@ function safeFilename(name: string) {
   const cleaned = name.normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(-120);
   return cleaned || "arquivo";
+}
+function mimeForFile(file: File) {
+  if (file.type) return file.type;
+  const ext = file.name.split(".").pop()?.toLowerCase();
+  const types: Record<string,string> = { mp4:"video/mp4",mov:"video/quicktime",webm:"video/webm",mkv:"video/x-matroska",mp3:"audio/mpeg",wav:"audio/wav",m4a:"audio/mp4",jpg:"image/jpeg",jpeg:"image/jpeg",png:"image/png",webp:"image/webp" };
+  return ext ? types[ext] ?? "application/octet-stream" : "application/octet-stream";
+}
+function uploadResumable(file: File, path: string, accessToken: string, onProgress: (percent: number) => void) {
+  const projectUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const apiKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+  if (!projectUrl || !apiKey) return Promise.reject(new Error("Configuração do Storage não encontrada."));
+  const projectRef = new URL(projectUrl).hostname.split(".")[0];
+  const contentType = mimeForFile(file);
+  return new Promise<void>((resolve, reject) => {
+    const upload = new tus.Upload(file, {
+      endpoint: `https://${projectRef}.storage.supabase.co/storage/v1/upload/resumable`,
+      retryDelays: [0, 3000, 5000, 10000, 20000],
+      headers: { authorization: `Bearer ${accessToken}`, apikey: apiKey, "x-upsert": "false" },
+      metadata: { bucketName: "09-video-ai", objectName: path, contentType, cacheControl: "3600" },
+      chunkSize: 6 * 1024 * 1024,
+      uploadDataDuringCreation: true,
+      removeFingerprintOnSuccess: true,
+      onError: reject,
+      onProgress: (uploaded, total) => onProgress(Math.round((uploaded / total) * 100)),
+      onSuccess: () => resolve()
+    });
+    upload.findPreviousUploads().then(previous => {
+      if (previous.length) upload.resumeFromPreviousUpload(previous[0]);
+      upload.start();
+    }).catch(reject);
+  });
 }
 function formatSize(bytes: number) {
   return bytes >= 1024 ** 3 ? (bytes / 1024 ** 3).toFixed(2) + " GB" : (bytes / 1024 ** 2).toFixed(1) + " MB";
@@ -100,7 +132,7 @@ export default function VideoAIStudio({ organizationId, initialProjects }: Props
       const kind = file.type.startsWith("audio/") ? "audio" : file.type.startsWith("image/") ? "broll" : "original";
       const {error:assetError} = await supabase.from("video_assets").insert({
         id:assetId,organization_id:organizationId,project_id:project.id,kind,storage_path:path,
-        original_filename:file.name,mime_type:file.type||"application/octet-stream",size_bytes:file.size,
+        original_filename:file.name,mime_type:mimeForFile(file),size_bytes:file.size,
         metadata:{source:"dashboard_upload"},created_by:authData.user.id
       });
       if (assetError) throw assetError;
