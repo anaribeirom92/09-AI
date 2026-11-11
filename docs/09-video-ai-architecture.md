@@ -63,3 +63,11 @@ As migrations versionadas estão em `supabase/migrations`. O hardening removeu a
 Decisão confirmada pela responsável do produto: o 09 VIDEO AI é exclusivamente interno da equipe da 09 Comunicação Integrada. Clientes não terão contas, convites, login, painel, upload, projetos nem aprovação dentro da plataforma. A equipe recebe os vídeos por seus canais habituais, opera o editor, revisa e entrega os arquivos finais externamente.
 
 A tabela `video_project_members` foi removida por não haver necessidade de associação de clientes a projetos. As funções RLS `private.can_access_video_project` e `private.can_manage_video_project` agora validam membership ativo na organização do projeto. O dashboard continua sob a autenticação e a autorização organizacional existentes.
+
+
+## F1 — Worker de ingestão (fundação em código)
+Foi criado o serviço independente `workers/video-ingest`, empacotado em Docker com Node.js 22 e FFmpeg/FFprobe. Ele consome jobs `ingest` da fila `video_jobs`, baixa o original por URL assinada temporária, extrai metadados técnicos, gera thumbnail e proxy MP4, envia os derivados ao bucket privado por TUS e registra os novos assets.
+
+O worker usa `SUPABASE_SERVICE_ROLE_KEY` exclusivamente no ambiente server-side. Não há endpoint público nem acesso de clientes. A concorrência padrão é 1 para limitar CPU e memória.
+
+**Estado:** código-base criado na branch de trabalho; ainda não foi compilado, executado contra um vídeo real nem implantado em um serviço de worker. Antes de produção, validar build, fluxo de upload/derivados, recuperação de jobs abandonados (lease/heartbeat), limpeza de uploads parciais e limites de duração/resolução.
