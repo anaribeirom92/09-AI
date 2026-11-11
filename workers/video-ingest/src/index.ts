@@ -135,6 +135,7 @@ async function main() {
     const errors = validateEditPlan(suppliedPlan);
     if (errors.length) throw new Error("Plano de edição inválido: " + errors.join(" "));
     if (suppliedPlan.status !== "approved" || suppliedPlan.safety.requires_human_review) throw new Error("O plano ainda não foi aprovado. Revise os segmentos e marque status como approved e requires_human_review como false.");
+    if (suppliedPlan.source.filename !== basename(options.input)) throw new Error("O plano foi criado para outro arquivo de vídeo.");
     if (Math.abs(suppliedPlan.source.duration_seconds - analysis.duration_seconds) > 0.1) throw new Error("A duração do plano não corresponde ao vídeo enviado.");
     segments = suppliedPlan.segments;
   }
