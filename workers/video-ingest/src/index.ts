@@ -149,7 +149,22 @@ async function main() {
     const outputTemp = resolve(temp, "render.mp4");
     const graph = buildEditFilterGraph(segments, Boolean(audio));
     let filter = `${graph.filter_complex};[vout]${scaleCrop},fps=30[vscaled]`;
-    let captionCount = 0;\n    if (options.captions) {\n      const sourceCues = parseSrt(await readFile(options.captions, "utf8"), analysis.duration_seconds);\n      const timelineCues = mapCaptionsToTimeline(sourceCues, segments);\n      captionCount = timelineCues.length;\n      if (timelineCues.length) {\n        const subtitlePath = resolve(temp, "captions.srt");\n        await writeFile(subtitlePath, serializeSrt(timelineCues), "utf8");\n        const escapedPath = subtitlePath.replace(/\\\\/g, "\\\\\\\\").replace(/:/g, "\\\\:").replace(/\'/g, "\\\\\'");\n        filter += `;[vscaled]subtitles=filename=\'${escapedPath}\':force_style=\'FontName=Arial,FontSize=18,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=1,Alignment=2,MarginV=48\'[vfinal]`;\n      } else {\n        filter += ";[vscaled]null[vfinal]";\n      }\n    } else {\n      filter += ";[vscaled]null[vfinal]";\n    }
+    let captionCount = 0;
+    if (options.captions) {
+      const sourceCues = parseSrt(await readFile(options.captions, "utf8"), analysis.duration_seconds);
+      const timelineCues = mapCaptionsToTimeline(sourceCues, segments);
+      captionCount = timelineCues.length;
+      if (timelineCues.length) {
+        const subtitlePath = resolve(temp, "captions.srt");
+        await writeFile(subtitlePath, serializeSrt(timelineCues), "utf8");
+        const escapedPath = subtitlePath.replace(/\\/g, "\\\\").replace(/:/g, "\\:");
+        filter += `;[vscaled]subtitles=filename='${escapedPath}':force_style='FontName=Arial,FontSize=18,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=1,Alignment=2,MarginV=48'[vfinal]`;
+      } else {
+        filter += ";[vscaled]null[vfinal]";
+      }
+    } else {
+      filter += ";[vscaled]null[vfinal]";
+    }
     let audioMap = graph.audio_map;
     let audioNormalized = false;
     if (audio) {
