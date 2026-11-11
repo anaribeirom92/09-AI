@@ -44,7 +44,7 @@ function run(command: string, args: string[]): Promise<ProcessResult> {
 function parseSilences(log: string): Silence[] {
   const starts: number[] = [];
   const intervals: Silence[] = [];
-  for ( (const line of log.split(/\r?\n/)) {
+  for (const line of log.split(/\r?\n/)) {
     const start = line.match(/silence_start:\s*([0-9.]+)/);
     if (start) starts.push(Number(start[1]));
     const end = line.match(/silence_end:\s*([0-9.]+)\s*\|\s*silence_duration:\s*([0-9.]+)/);
