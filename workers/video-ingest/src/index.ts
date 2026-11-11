@@ -7,14 +7,15 @@ import { createReviewEditPlan, validateEditPlan, type EditPlan, type EditSegment
 import { buildEditFilterGraph } from "./render-plan.js";
 import { mapCaptionsToTimeline, parseSrt, serializeSrt } from "./captions.js";
 import { serializeAssTitles, validateTitles } from "./titles.js";
+import { parseSceneTimestamps } from "./scenes.js";
 
 type Aspect = "9:16" | "16:9" | "1:1";
-type Options = { input: string; output?: string; aspect: Aspect; height: 720 | 1080 | 1440 | 2160; analyzeOnly: boolean; transcribe: boolean; whisperBin: string; whisperModel?: string; language: string; silenceNoise: string; silenceDuration: number; report?: string; plan?: string; editPlan?: string; captions?: string; fadeIn: number; fadeOut: number; titles?: string };
+type Options = { input: string; output?: string; aspect: Aspect; height: 720 | 1080 | 1440 | 2160; analyzeOnly: boolean; transcribe: boolean; whisperBin: string; whisperModel?: string; language: string; silenceNoise: string; silenceDuration: number; sceneThreshold: number; report?: string; plan?: string; editPlan?: string; captions?: string; fadeIn: number; fadeOut: number; titles?: string };
 type ProcessResult = { stdout: string; stderr: string };
 function parseArgs(args: string[]): Options {
   const values = new Map<string, string>();
   const flags = new Set(["analyze-only", "transcribe"]);
-  const valueOptions = new Set(["input", "output", "aspect", "height", "silence-noise", "silence-duration", "report", "plan", "whisper-model", "whisper-bin", "language", "edit-plan", "captions", "fade-in", "fade-out", "titles"]);
+  const valueOptions = new Set(["input", "output", "aspect", "height", "silence-noise", "silence-duration", "scene-threshold", "report", "plan", "whisper-model", "whisper-bin", "language", "edit-plan", "captions", "fade-in", "fade-out", "titles"]);
   for (let i = 0; i < args.length; i++) {
     const key = args[i];
     if (key.startsWith("--")) {
@@ -37,14 +38,16 @@ function parseArgs(args: string[]): Options {
   const height = Number(values.get("height") ?? "1080") as Options["height"];
   const silenceDuration = Number(values.get("silence-duration") ?? "0.45");
   const silenceNoise = values.get("silence-noise") ?? "-35dB";
+  const sceneThreshold = Number(values.get("scene-threshold") ?? "0.30");
   const fadeIn = Number(values.get("fade-in") ?? "0");
   const fadeOut = Number(values.get("fade-out") ?? "0");
   if (!/^-?\d+(?:\.\d+)?dB$/i.test(silenceNoise) || Number.parseFloat(silenceNoise) > 0 || Number.parseFloat(silenceNoise) < -100) throw new Error("Limite de silêncio inválido; use um valor entre -100dB e 0dB.");
   if (!["9:16", "16:9", "1:1"].includes(aspect)) throw new Error("Proporção inválida.");
   if (![720, 1080, 1440, 2160].includes(height)) throw new Error("Resolução inválida.");
+  if (!Number.isFinite(sceneThreshold) || sceneThreshold < 0.05 || sceneThreshold > 0.95) throw new Error("O limiar de mudança de cena deve estar entre 0.05 e 0.95.");
   if (!Number.isFinite(silenceDuration) || silenceDuration < 0.1 || silenceDuration > 10) throw new Error("Duração mínima de silêncio deve estar entre 0.1 e 10 segundos.");
   if (![fadeIn, fadeOut].every(value => Number.isFinite(value) && value >= 0 && value <= 10)) throw new Error("Fades devem estar entre 0 e 10 segundos.");
-  return { input: resolve(input), output: output ? resolve(output) : undefined, aspect, height, analyzeOnly, transcribe, whisperBin: values.get("whisper-bin") ?? "whisper-cli", whisperModel: whisperModel ? resolve(whisperModel) : undefined, language: values.get("language") ?? "pt", silenceNoise, silenceDuration, report: values.get("report") ? resolve(values.get("report")!) : undefined, plan: values.get("plan") ? resolve(values.get("plan")!) : undefined, editPlan: values.get("edit-plan") ? resolve(values.get("edit-plan")!) : undefined, captions: values.get("captions") ? resolve(values.get("captions")!) : undefined, fadeIn, fadeOut, titles: values.get("titles") ? resolve(values.get("titles")!) : undefined };
+  return { input: resolve(input), output: output ? resolve(output) : undefined, aspect, height, analyzeOnly, transcribe, whisperBin: values.get("whisper-bin") ?? "whisper-cli", whisperModel: whisperModel ? resolve(whisperModel) : undefined, language: values.get("language") ?? "pt", silenceNoise, silenceDuration, sceneThreshold, report: values.get("report") ? resolve(values.get("report")!) : undefined, plan: values.get("plan") ? resolve(values.get("plan")!) : undefined, editPlan: values.get("edit-plan") ? resolve(values.get("edit-plan")!) : undefined, captions: values.get("captions") ? resolve(values.get("captions")!) : undefined, fadeIn, fadeOut, titles: values.get("titles") ? resolve(values.get("titles")!) : undefined };
 }
 function run(command: string, args: string[]): Promise<ProcessResult> {
   return new Promise((resolvePromise, reject) => {
@@ -61,10 +64,13 @@ async function analyze(options: Options, probe: { format?: { duration?: string; 
   if (!video) throw new Error("O arquivo não contém uma faixa de vídeo.");
   const audioStream = probe.streams?.find(stream => stream.codec_type === "audio");
   let silences: SilenceInterval[] = [];
+  let sceneChanges: number[] = [];
   if (audioStream) {
     const result = await run("ffmpeg", ["-hide_banner", "-i", options.input, "-vn", "-af", `silencedetect=noise=${options.silenceNoise}:d=${options.silenceDuration}`, "-f", "null", "-"]);
     silences = parseSilences(result.stderr, Number(probe.format?.duration ?? 0));
   }
+  const sceneResult = await run("ffmpeg", ["-hide_banner", "-i", options.input, "-an", "-vf", "select='gt(scene," + options.sceneThreshold + ")',showinfo", "-f", "null", "-"]);
+  sceneChanges = parseSceneTimestamps(sceneResult.stderr, Number(probe.format?.duration ?? 0));
   const duration = Number(probe.format?.duration ?? 0);
   const totalSilence = silences.reduce((sum, item) => sum + item.duration, 0);
   return {
@@ -73,6 +79,7 @@ async function analyze(options: Options, probe: { format?: { duration?: string; 
     input: basename(options.input),
     duration_seconds: duration,
     source: { format: probe.format?.format_name ?? null, width: video.width ?? null, height: video.height ?? null, rotation_degrees: video.side_data_list?.find(item => typeof item.rotation === "number")?.rotation ?? 0, video_codec: video.codec_name ?? null, audio: audioStream ? { codec: audioStream.codec_name ?? null, sample_rate: audioStream.sample_rate ?? null, channels: audioStream.channels ?? null } : null },
+    scene_analysis: { detector: "ffmpeg select(scene)", threshold: options.sceneThreshold, candidate_count: sceneChanges.length, candidate_timestamps_seconds: sceneChanges, note: "Pontos candidatos a mudança visual; não representam compreensão semântica nem cortes aprovados." },
     audio_analysis: { silence_threshold: options.silenceNoise, minimum_silence_seconds: options.silenceDuration, detected_silence_count: silences.length, total_detected_silence_seconds: Number(totalSilence.toFixed(3)), intervals: silences },
     edit_suggestions: silences.map((item, index) => ({ id: `silence-${index + 1}`, type: "review_pause", start_seconds: item.start, end_seconds: item.end, duration_seconds: item.duration, automatic_cut: false, note: "Revisar contexto antes de remover; pode ser uma pausa natural de fala." })),
     safety: { source_modified: false, automatic_cuts_applied: false, temporary_media_created: false }
@@ -129,7 +136,7 @@ async function main() {
       await writeFile(options.plan, JSON.stringify(plan, null, 2) + "\n", "utf8");
       planPath = options.plan;
     }
-    console.log(JSON.stringify({ ok: true, mode: "analysis", report: reportPath, plan: planPath ?? null, duration_seconds: analysis.duration_seconds, detected_silences: analysis.audio_analysis.detected_silence_count, automatic_cuts_applied: false }, null, 2));
+    console.log(JSON.stringify({ ok: true, mode: "analysis", report: reportPath, plan: planPath ?? null, duration_seconds: analysis.duration_seconds, detected_silences: analysis.audio_analysis.detected_silence_count, candidate_scene_changes: analysis.scene_analysis.candidate_count, automatic_cuts_applied: false }, null, 2));
     return;
   }
   const video = probe.streams?.find(stream => stream.codec_type === "video");
